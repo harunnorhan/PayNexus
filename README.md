@@ -22,3 +22,30 @@ Key documents:
 - [Component Boundaries](docs/architecture/component-boundaries.md)
 - [Engineering Principles](docs/engineering/engineering-principles.md)
 - [Architecture Decision Records](docs/adr/)
+
+## Project Structure
+
+PayNexus is organized as a Gradle monorepo.
+
+```text
+PayNexus/
+├── apps/
+│   ├── merchant/
+│   └── payment-service/
+├── core/
+│   ├── model/
+│   └── domain/
+├── payment/
+│   ├── contract/
+│   └── domain/
+├── server/
+│   ├── application/
+│   ├── domain/
+│   └── infrastructure/
+├── build-logic/
+├── gradle/
+│   ├── libs.versions.toml
+│   └── wrapper/
+├── build.gradle.kts
+├── settings.gradle.kts
+└── gradle.properties

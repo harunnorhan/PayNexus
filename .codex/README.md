@@ -5,8 +5,7 @@ development.
 
 The repository root `AGENTS.md` defines mandatory global rules.
 
-The `skills/` directory contains focused engineering procedures that must be
-read when a task touches the relevant area.
+The `.agents/skills/` directory contains focused engineering procedures that must be read when a task touches the relevant area.
 
 ## Operating Model
 

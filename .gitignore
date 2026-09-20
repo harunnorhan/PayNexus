@@ -1,0 +1,32 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Local configuration
+local.properties
+*.local
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Secrets / environment files
+.env
+.env.*
+!.env.example
+
+# Signing / keys
+*.jks
+*.keystore
+
+# Temporary
+tmp/
+temp/

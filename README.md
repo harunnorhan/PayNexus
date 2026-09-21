@@ -49,3 +49,19 @@ PayNexus/
 ├── build.gradle.kts
 ├── settings.gradle.kts
 └── gradle.properties
+
+## Code Quality
+
+PayNexus uses repository-wide quality checks that can be executed locally and later reused by CI.
+
+The current quality toolchain includes:
+
+- Spotless
+- ktlint
+- Detekt
+- Android Lint
+
+Run all repository quality checks with:
+
+```bash
+./gradlew qualityCheck

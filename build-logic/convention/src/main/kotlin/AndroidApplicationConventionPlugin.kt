@@ -8,6 +8,7 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             pluginManager.apply("com.android.application")
+            pluginManager.apply("paynexus.code.quality")
 
             extensions.configure<ApplicationExtension> {
                 compileSdk = 36
@@ -19,6 +20,17 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 compileOptions {
                     sourceCompatibility = JavaVersion.VERSION_17
                     targetCompatibility = JavaVersion.VERSION_17
+                }
+
+                lint {
+                    abortOnError = true
+                    warningsAsErrors = true
+                    checkReleaseBuilds = true
+
+                    disable += setOf(
+                        "AndroidGradlePluginVersion",
+                        "NewerVersionAvailable",
+                    )
                 }
             }
         }

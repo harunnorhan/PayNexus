@@ -7,6 +7,8 @@ group = "com.paynexus.buildlogic"
 dependencies {
     implementation(libs.android.gradle.plugin)
     implementation(libs.kotlin.gradle.plugin)
+    implementation(libs.spotless.gradle.plugin)
+    implementation(libs.detekt.gradle.plugin)
 }
 
 gradlePlugin {
@@ -24,6 +26,11 @@ gradlePlugin {
         register("kotlinJvmLibrary") {
             id = "paynexus.kotlin.jvm.library"
             implementationClass = "KotlinJvmLibraryConventionPlugin"
+        }
+
+        register("codeQuality") {
+            id = "paynexus.code.quality"
+            implementationClass = "CodeQualityConventionPlugin"
         }
     }
 }

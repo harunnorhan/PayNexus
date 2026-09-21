@@ -5,4 +5,6 @@ plugins {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:domain"))
+
+    testImplementation(libs.kotlin.test.junit)
 }

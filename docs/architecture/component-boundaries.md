@@ -137,3 +137,51 @@ Domain
     ^
     |
 Infrastructure
+
+```
+
+## Payment Domain Foundation
+
+`:payment:domain` owns `CurrencyCode`, `Money`, `PaymentAmount`, `PaymentId`,
+`IdempotencyKey`, `DeclineReason`, `PaymentFailure`, `PaymentOutcome`,
+`PaymentState`, and `IllegalPaymentTransitionException` in
+`com.paynexus.payment.domain`. No demonstrated cross-domain use currently
+justifies promoting these types into `:core:model` or `:core:domain`.
+`:payment:contract` remains separate and gains no domain or transport models
+from this foundation.
+
+All domain models are immutable and framework-independent. `Money` stores
+signed or zero `Long` minor units with explicit currency; `PaymentAmount`
+requires a strictly positive quantity. TRY is initially the only supported
+currency. `CurrencyCode.fromCode(code)` rejects unsupported, blank, or
+noncanonical codes without normalization or fallback.
+
+`PaymentId` and `IdempotencyKey` reject blank values and preserve caller-supplied
+values exactly. They neither generate identifiers nor enforce uniqueness or
+idempotency. Invalid value construction throws `IllegalArgumentException`
+with fixed messages that do not expose supplied values. Constructor validation
+also applies when copying a value.
+
+The legal lifecycle transitions are:
+
+- `Created -> Processing`
+- `Processing -> Finished(Approved)`
+- `Processing -> Finished(Declined(reason))`
+- `Processing -> Finished(Failed(failure))`
+
+Every other transition, including self-transitions and all transitions from
+terminal states, throws `IllegalPaymentTransitionException` with source and
+target states. Transitions return the next immutable state without mutating
+the original. This is a domain rule, not a durable or concurrent orchestration
+mechanism.
+
+A decline is a confirmed business response; its initial reason is
+`DeclineReason.UNSPECIFIED`. A technical failure uses
+`PaymentFailure.PROCESSING_ERROR`. Neither contains transport exceptions or
+raw error payloads. Validation and transition errors are distinct from these
+terminal outcomes. Future integrations must not assume that a timeout or
+connection loss proves a payment failed; uncertain remote outcomes require
+an explicit design in a later task.
+
+This foundation introduces no payment-card data, serialization, persistence,
+networking, Android dependencies, retries, or runtime communication changes.

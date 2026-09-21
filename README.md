@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. Feature implementation is in progress.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain foundation is implemented; runtime payment integration remains future work.
 
 ## Documentation
 
@@ -76,6 +76,24 @@ The Merchant Application must never communicate with the Payment Server directly
 - `server:domain` — Server-side domain layer
 - `server:application` — Server application/use-case layer
 - `server:infrastructure` — Server infrastructure implementations
+
+### Payment Domain Foundation
+
+`payment:domain` owns the immutable payment value types, identifiers, outcomes,
+and lifecycle in `com.paynexus.payment.domain`. Money uses `Long` minor units
+and explicit TRY currency; `PaymentAmount` requires a positive quantity.
+Parse supported currency codes with `CurrencyCode.fromCode(code)`.
+
+The lifecycle is `Created -> Processing -> Finished(outcome)`, with explicit
+approved, declined, and technically failed outcomes. Illegal transitions throw
+a domain transition exception, and terminal states cannot transition further.
+These types provide no transport, persistence, retry, or idempotency enforcement.
+
+Run the deterministic JVM domain tests with:
+
+```bash
+./gradlew :payment:domain:test
+```
 
 ## Build Logic
 

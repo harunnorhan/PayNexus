@@ -8,6 +8,7 @@ class KotlinJvmLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             pluginManager.apply("org.jetbrains.kotlin.jvm")
+            pluginManager.apply("paynexus.code.quality")
 
             extensions.configure<JavaPluginExtension> {
                 toolchain {

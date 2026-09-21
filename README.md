@@ -25,6 +25,7 @@ Key documents:
 - [System Context](docs/architecture/system-context.md)
 - [Component Boundaries](docs/architecture/component-boundaries.md)
 - [Engineering Principles](docs/engineering/engineering-principles.md)
+- [Testing Strategy](docs/engineering/testing-strategy.md) — Current domain JVM tests and local outcome samples, with guidance for future testing layers.
 - [Architecture Decision Records](docs/adr/)
 
 ## Project Structure

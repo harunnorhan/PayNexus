@@ -92,7 +92,7 @@ Dependency and plugin versions are centralized in `gradle/libs.versions.toml`.
 
 ## Code Quality
 
-PayNexus uses repository-wide quality checks that can be executed locally and later reused by CI.
+PayNexus uses the same repository-wide quality checks locally and in CI.
 
 The current quality toolchain includes:
 
@@ -124,6 +124,35 @@ Run the full project build with:
 Quality rules must not be disabled, broadly suppressed, or hidden behind baselines only to make verification pass.
 
 Version-availability lint checks are intentionally excluded from the strict quality gate because external dependency releases must not make an otherwise unchanged build nondeterministically fail.
+
+## Continuous Integration
+
+The [CI workflow](.github/workflows/ci.yml) runs on Pull Requests targeting `main`.
+Its `Quality and Build` job runs on Ubuntu 24.04 with Eclipse Temurin JDK 17
+and uses the committed Gradle Wrapper. The `gradle/actions/setup-gradle` action
+validates Gradle Wrapper JARs before verification; snapshot wrappers are disallowed.
+The Wrapper also verifies the downloaded Gradle distribution using its committed checksum.
+
+CI runs these commands as separate, sequential steps. Use JDK 17 and the same
+commands for local verification:
+
+```bash
+./gradlew qualityCheck
+./gradlew build
+```
+
+Gradle setup uses basic, read-only caching for Pull Requests. This workflow does
+not populate the shared cache, so cache misses are expected until suitable entries
+exist. Cache availability is not required for verification.
+
+The workflow uses SHA-pinned official GitHub and Gradle actions with read-only
+repository permissions. It requires no configured secrets and does not publish
+Build Scans or submit dependency graphs.
+
+`Quality and Build` is the stable required-status-check candidate. Required status
+checks for `main` will only be configured after the first successful remote run
+has been verified as stable. Adding this workflow does not configure repository
+protection settings or establish that remote CI has passed.
 
 ## Build
 

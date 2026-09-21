@@ -7,8 +7,8 @@ import kotlin.test.assertSame
 
 class PaymentStateTest {
     private val approved = PaymentState.Finished(PaymentOutcome.Approved)
-    private val declined = PaymentState.Finished(PaymentOutcome.Declined(DeclineReason.UNSPECIFIED))
-    private val failed = PaymentState.Finished(PaymentOutcome.Failed(PaymentFailure.PROCESSING_ERROR))
+    private val declined = PaymentState.Finished(declinedPaymentOutcome())
+    private val failed = PaymentState.Finished(failedPaymentOutcome())
 
     @Test
     fun `created can begin processing`() {

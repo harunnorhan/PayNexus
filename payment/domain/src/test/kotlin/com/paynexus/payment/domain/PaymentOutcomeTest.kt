@@ -30,8 +30,8 @@ class PaymentOutcomeTest {
 
     @Test
     fun `business decline and technical failure remain distinct`() {
-        val declined: PaymentOutcome = PaymentOutcome.Declined(DeclineReason.UNSPECIFIED)
-        val failed: PaymentOutcome = PaymentOutcome.Failed(PaymentFailure.PROCESSING_ERROR)
+        val declined: PaymentOutcome = declinedPaymentOutcome()
+        val failed: PaymentOutcome = failedPaymentOutcome()
         assertNotEquals(declined, failed)
         assertNotEquals(PaymentOutcome.Approved, declined)
         assertNotEquals(PaymentOutcome.Approved, failed)

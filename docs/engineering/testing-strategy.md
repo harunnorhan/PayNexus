@@ -190,3 +190,60 @@ instrumentation infrastructure are added for this foundation. Automated UI
 interaction and accessibility coverage remain future work. Custom behavior must
 trigger a fresh testing decision rather than inheriting this limited strategy.
 See [Design System verification](../design/design-system.md#verification).
+
+## Merchant Shell Verification
+
+PNX-009 adds a launchable Compose Activity and neutral shell, with no feature
+interaction, business state, or navigation. Its approved verification consists of
+compilation, lint, static analysis, debug previews, and manual runtime inspection.
+No Compose instrumentation or screenshot infrastructure is introduced. This limited
+strategy applies only to this shell; PNX-010 must choose automated behavioral tests
+when interaction/state appears. Existing domain tests remain unchanged.
+
+Use JDK 17 and SDK Platform 37. Compile SDK is 37; both applications retain explicit
+target SDK 36 and minimum SDK 26. Verify regenerated manifests rather than assuming
+these values from successful compilation.
+
+```bash
+./gradlew -p build-logic :convention:build
+./gradlew :apps:merchant:assembleDebug :design-system:assembleDebug :apps:payment-service:assembleDebug
+./gradlew :apps:merchant:lint
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :apps:merchant:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:merchant:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+```
+
+Inspect manifests for the intended launcher, label, window theme, SDKs, permissions,
+and exported components. Inspect dependency reports for Activity 1.13.0, Compose
+BOM alignment, and absence of preview tooling from release runtime. AndroidX
+contributes a signature-protected dynamic-receiver permission, a non-exported
+startup provider, and a profile-install receiver protected by `android.permission.DUMP`.
+Debug tooling also contributes an exported `PreviewActivity`; it must be absent
+from release. These library manifest entries are distinct from the single
+application-owned launcher Activity. No network permission is requested.
+
+Render all six `MerchantShellPreviews` scenarios in Android Studio: light, dark,
+narrow, wide, large font, and landscape. Inspect wrapping and clipping. Preview
+compilation alone does not establish that rendering was inspected.
+
+On an available local device/emulator:
+
+1. Run `./gradlew :apps:merchant:installDebug`.
+2. Find the icon and **PayNexus Merchant** label in the launcher and tap it.
+3. Confirm startup without a crash or framework action bar; inspect the Compose
+   text, Design System typography/spacing, and themed background.
+4. Repeat in light/dark mode, normal/2x font scale, narrow portrait, landscape,
+   and a wider window where available. Check scrolling and text wrapping.
+5. Check status/navigation bars and cutouts, including gesture and three-button
+   navigation where available. Important content must remain within safe insets.
+6. With TalkBack, check text reading order, title heading, and scrolling.
+7. Record device/API and checks actually performed. Report unavailable scenarios
+   as pending; installation alone is not launch verification.
+
+These are verification instructions, not a claim that runtime or preview inspection
+has occurred. Remote `CI / Quality and Build` still requires separately authorized
+PR work and observation of the completed run and required-check enforcement.

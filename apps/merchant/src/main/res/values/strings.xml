@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PayNexus Merchant</string>
+    <string name="merchant_shell_subtitle">Merchant application</string>
+    <string name="merchant_shell_description">A workspace for the PayNexus simulation.</string>
+</resources>

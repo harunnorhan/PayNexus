@@ -176,3 +176,17 @@ After an authorized Pull Request is created, observe the actual CI result and
 verify required-check enforcement separately. A workflow file alone does not
 prove repository protection settings or CI success. Report only commands and
 results actually observed, including limitations and skipped or cached work.
+
+## Design System Foundation Verification
+
+`:design-system` uses compilation, Android Lint, existing repository quality
+checks, and manual Compose preview inspection for its initial theme, tokens,
+and thin Material button wrapper. Debug previews cover light/dark themes,
+enabled/disabled states, long text, and large font scale. They compile with
+`:design-system:assembleDebug`; compilation does not establish visual correctness.
+
+No constant-assertion tests, screenshot infrastructure, emulator CI, or Compose
+instrumentation infrastructure are added for this foundation. Automated UI
+interaction and accessibility coverage remain future work. Custom behavior must
+trigger a fresh testing decision rather than inheriting this limited strategy.
+See [Design System verification](../design/design-system.md#verification).

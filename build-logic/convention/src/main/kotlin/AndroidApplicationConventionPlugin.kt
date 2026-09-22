@@ -11,10 +11,11 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
             pluginManager.apply("paynexus.code.quality")
 
             extensions.configure<ApplicationExtension> {
-                compileSdk = 36
+                compileSdk = 37
 
                 defaultConfig {
                     minSdk = 26
+                    targetSdk = 36
                 }
 
                 compileOptions {

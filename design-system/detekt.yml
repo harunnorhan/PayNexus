@@ -1,0 +1,4 @@
+# Canonical Compose UI names are PascalCase. All other naming checks remain active.
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']

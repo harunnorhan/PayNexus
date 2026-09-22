@@ -37,6 +37,7 @@ PayNexus/
 ├── apps/
 │   ├── merchant/
 │   └── payment-service/
+├── design-system/
 ├── core/
 │   ├── model/
 │   └── domain/
@@ -77,6 +78,13 @@ The Merchant Application must never communicate with the Payment Server directly
 - `server:domain` — Server-side domain layer
 - `server:application` — Server application/use-case layer
 - `server:infrastructure` — Server infrastructure implementations
+
+### Design System Foundation
+
+`design-system` provides the provisional Compose theme, compact spacing tokens,
+and `PayNexusButton`, with debug-only previews. It is independent of payment
+models and is not yet wired into Merchant screens. See the
+[Design System guide](docs/design/design-system.md) for APIs and verification.
 
 ### Payment Domain Foundation
 

@@ -185,3 +185,15 @@ an explicit design in a later task.
 
 This foundation introduces no payment-card data, serialization, persistence,
 networking, Android dependencies, retries, or runtime communication changes.
+
+## Design System Foundation
+
+`:design-system` owns reusable Compose theme configuration, spacing tokens,
+and `PayNexusButton` in `com.paynexus.designsystem`. It has no project-module
+dependencies. Merchant UI may consume it in a later task.
+
+The library must not depend on `:payment:domain`, `:payment:contract`, either
+Android application, or any server module. It owns no screen state, ViewModel,
+navigation, repository, IPC, network, persistence, or payment orchestration.
+Features map business state to presentation outside the design system.
+See the [Design System guide](../design/design-system.md) for its current APIs.

@@ -22,6 +22,7 @@ rootProject.name = "PayNexus"
 include(
     ":apps:merchant",
     ":apps:payment-service",
+    ":design-system",
     ":core:model",
     ":core:domain",
     ":payment:contract",

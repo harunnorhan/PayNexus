@@ -190,10 +190,22 @@ networking, Android dependencies, retries, or runtime communication changes.
 
 `:design-system` owns reusable Compose theme configuration, spacing tokens,
 and `PayNexusButton` in `com.paynexus.designsystem`. It has no project-module
-dependencies. Merchant UI may consume it in a later task.
+dependencies. Merchant consumes it through an explicit production dependency.
 
 The library must not depend on `:payment:domain`, `:payment:contract`, either
 Android application, or any server module. It owns no screen state, ViewModel,
 navigation, repository, IPC, network, persistence, or payment orchestration.
 Features map business state to presentation outside the design system.
 See the [Design System guide](../design/design-system.md) for its current APIs.
+
+## Merchant Shell Foundation
+
+`:apps:merchant` owns the launcher `MainActivity` in `com.paynexus.merchant`
+and `MerchantApp`/`MerchantShell` in `com.paynexus.merchant.ui`. The Activity installs
+`PayNexusTheme`; the root delegates to a stateless shell with resource-backed copy,
+a themed surface, safe drawing insets, and local scrolling for constrained layouts.
+
+Its only project dependency is `:design-system`. No payment feature, ViewModel,
+navigation, service binding, network, or persistence is implemented. Design System
+remains independent of Merchant and owns no application window/inset behavior.
+The mandatory future payment path remains Merchant -> Payment Service -> Server.

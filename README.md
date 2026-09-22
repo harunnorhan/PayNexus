@@ -83,7 +83,7 @@ The Merchant Application must never communicate with the Payment Server directly
 
 `design-system` provides the provisional Compose theme, compact spacing tokens,
 and `PayNexusButton`, with debug-only previews. It is independent of payment
-models and is not yet wired into Merchant screens. See the
+models and is consumed by the launchable Merchant shell. See the
 [Design System guide](docs/design/design-system.md) for APIs and verification.
 
 ### Payment Domain Foundation
@@ -112,6 +112,7 @@ Current convention plugins:
 
 - `paynexus.android.application`
 - `paynexus.android.library`
+- `paynexus.android.compose`
 - `paynexus.kotlin.jvm.library`
 - `paynexus.code.quality`
 
@@ -192,3 +193,27 @@ Use the Gradle Wrapper:
 ```
 
 A globally installed Gradle distribution is not required.
+
+## Merchant Application Shell
+
+Merchant launches through `MainActivity -> PayNexusTheme -> MerchantApp -> MerchantShell`.
+It currently displays only neutral application identity and supporting text; payment
+features, service binding, navigation, networking, and persistence remain future work.
+Compose theme and spacing come from `:design-system`.
+
+Android conventions use compile SDK 37, minimum SDK 26, and Java 17. Install SDK
+Platform 37. Applications explicitly retain target SDK 36; this is not a target-SDK
+migration. `paynexus.android.compose` shares compiler enablement and narrow Compose
+naming allowances; dependencies and their scopes remain module-owned.
+
+Build and install on a connected local emulator/device:
+
+```bash
+./gradlew :apps:merchant:assembleDebug
+./gradlew :apps:merchant:installDebug
+```
+
+Open **PayNexus Merchant** from the launcher. Follow the
+[Merchant runtime verification checklist](docs/engineering/testing-strategy.md#merchant-shell-verification).
+Installation and compilation alone do not establish successful launch or visual
+correctness. PNX-010 must reevaluate automated tests when interaction is introduced.

@@ -7,27 +7,28 @@ It owns reusable visual primitives, not Merchant screens or payment behavior.
 It has no project-module dependencies. It must not depend on payment domain or
 contract models, either Android application, or server modules. ViewModels,
 navigation, repositories, networking, persistence, and IPC do not belong here.
-Future Merchant UI may depend on this library; it is not integrated yet.
+Merchant now consumes this library in its launchable, feature-neutral shell.
 
 ## Build and dependencies
 
-Compose configuration is local to the module, using `paynexus.android.library`
-and `org.jetbrains.kotlin.plugin.compose`, with the compiler version following
-the catalog Kotlin version. AGP built-in Kotlin remains enabled. Compose library
-versions are aligned by the stable official BOM `2026.09.00`; individual Compose
-libraries have no version overrides. This module overrides compile SDK to 37,
-required by the BOM's Compose AAR metadata; the shared convention remains at 36.
-Minimum SDK remains 26 and Java compatibility remains 17. Install Android SDK
-Platform 37 for local builds. Future consuming applications must satisfy the
-same dependency compile-SDK requirements.
+Compose configuration uses `paynexus.android.library` and
+`paynexus.android.compose`. The latter applies the Compose compiler plugin at the
+catalog Kotlin version (2.2.10), enables Compose, and configures narrow naming
+allowances. AGP built-in Kotlin remains enabled. Library versions use stable BOM
+`2026.09.00`, with no individual Compose version overrides.
+
+Both Android conventions now use compile SDK 37; the former module-local override
+is removed. Minimum SDK remains 26 and Java compatibility remains 17. Install SDK
+Platform 37. Android applications separately preserve explicit target SDK 36;
+this compile baseline change does not migrate application runtime targeting.
 
 The BOM, runtime, and UI use `api` because public APIs expose Compose annotations,
 `Modifier`, and `Dp`. Foundation and Material 3 are implementation dependencies.
 Preview annotations and tooling are debug-only. No activity, navigation, font,
 network, or persistence library is added directly.
 
-Compose convention-plugin extraction is deferred until another real Compose
-consumer exists, to be reevaluated in PNX-009. There is no `paynexus.android.compose`.
+The convention is shared with `:apps:merchant`. BOMs, Compose libraries, Activity,
+and debug tooling remain explicit dependencies of their consuming modules.
 
 ## Theme usage
 
@@ -148,12 +149,11 @@ be observed on an authorized PR; this document does not claim CI success.
 
 ## Quality configuration
 
-Initial Detekt execution reported `FunctionNaming` for `PayNexusTheme` and
-`PayNexusButton`. The module-local `detekt.yml` uses the supported
-`ignoreAnnotated: ['Composable']` setting only for that rule. Other functions
-retain naming checks, all other default rules remain active, and no baseline
-or blanket suppression is used. Shared build logic and CI gates are unchanged.
+The Compose convention uses `build-logic/config/compose-detekt.yml` with
+`FunctionNaming.ignoreAnnotated: ['Composable']`, preserving default rules through
+`buildUponDefaultConfig = true`. Function naming remains enabled for other
+functions. No baseline or blanket suppression is used.
 
-Spotless/ktlint also reported the canonical composable names. A module-local
-Spotless editor-config override applies ktlint's `Composable` naming exception
-only to this module's Kotlin sources; the function-naming rule remains enabled.
+The convention also applies the ktlint `Composable` naming exception only to Kotlin
+sources of Compose modules. Gradle script formatting and non-Compose module naming
+rules remain unchanged. Both Merchant and Design System consume this configuration.

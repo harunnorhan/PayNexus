@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PayNexus Merchant</string>
-    <string name="merchant_shell_subtitle">Merchant application</string>
-    <string name="merchant_shell_description">A workspace for the PayNexus simulation.</string>
+    <string name="amount_entry_title">Enter amount</string>
+    <string name="amount_entry_label">Amount (TRY)</string>
+    <string name="amount_entry_hint">Use a dot or comma and up to two decimal places.</string>
+    <string name="amount_entry_incomplete">Enter digits after the decimal separator.</string>
+    <string name="amount_entry_error_format">Enter a valid amount.</string>
+    <string name="amount_entry_error_fraction">Use at most two decimal places.</string>
+    <string name="amount_entry_error_positive">Enter an amount greater than zero.</string>
+    <string name="amount_entry_error_overflow">Amount is too large.</string>
+    <string name="amount_entry_confirm">Confirm amount</string>
+    <string name="amount_entry_ready">Amount ready: %1$s</string>
+    <string name="amount_entry_no_payment">No payment has been started.</string>
+    <string name="amount_entry_formatted_try">TRY %1$s</string>
 </resources>

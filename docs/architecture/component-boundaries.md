@@ -186,6 +186,47 @@ an explicit design in a later task.
 This foundation introduces no payment-card data, serialization, persistence,
 networking, Android dependencies, retries, or runtime communication changes.
 
+## IPC Contract Foundation
+
+`:payment:contract` is an Android library owning the versioned AIDL/Binder contract
+in `com.paynexus.payment.contract`. It owns AIDL definitions, generated Binder
+APIs, and repository-owned compatibility metadata only. AIDL is enabled locally
+in this module. It has no payment-domain or other project-module dependency.
+It owns no application component, permission, Service/client implementation,
+payment orchestration, networking, persistence, or UI.
+
+V1 exposes only `int getContractVersion()`. `PaymentIpcContract` defines
+`CURRENT_VERSION = 1` and `MIN_SUPPORTED_VERSION = 1`; `supports(remoteVersion)`
+accepts the inclusive supported range. Version 1 is supported; 0, 2, negative
+values, and all other unknown versions are rejected without clamping or direct
+server fallback. Future version bumps must explicitly reconsider both constants,
+backward compatibility, method availability, and client/service negotiation.
+Compatibility negotiation is not authentication or authorization.
+
+The synchronous version query must eventually return a constant or equally
+trivial value without side effects, file IO, network, database, or payment work.
+Remote calls still have IPC latency and must not block the client main thread.
+Future payment execution remains asynchronous under ADR-0002.
+
+Neither Android application currently depends on the contract. Future dependency
+direction is `:apps:merchant -> :payment:contract <- :apps:payment-service`.
+No runtime IPC exists: Payment Service remains unimplemented and Merchant unbound.
+PNX-012 owns the Service shell, `android:exported`, `android:permission`, and caller
+validation. PNX-013/PNX-014 own Merchant binding, connection state, unavailable
+service/version mismatch behavior, reconnect, and Binder death lifecycle
+(`DeathRecipient`, `linkToDeath`, and `unlinkToDeath`).
+
+PNX-015 owns asynchronous payment request/result transport and explicit mapping
+from framework-independent domain values. No parcelables or payment data cross
+Binder yet. Deferring transport avoids premature decisions about request
+correlation, PaymentId/IdempotencyKey ownership, callback lifecycle, result
+taxonomy, timeouts, uncertain outcomes, and backward-compatible parcelable
+evolution. Domain models remain unchanged and have no Android/Binder coupling.
+
+This uses ordinary Android application/library AIDL through AGP. No platform/HAL
+build or frozen-interface tooling is introduced. ADR-0002 remains the governing
+decision; the required path remains Merchant -> Payment Service -> Payment Server.
+
 ## Design System Foundation
 
 `:design-system` owns reusable Compose theme configuration, spacing tokens,

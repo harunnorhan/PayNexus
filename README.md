@@ -60,7 +60,7 @@ PayNexus/
 ### Runtime Components
 
 - `apps:merchant` — Merchant-facing Android application
-- `apps:payment-service` — Headless Android application foundation; Android Service implementation is pending
+- `apps:payment-service` — Headless Android bound Service exposing the V1 contract-version query
 - `server:*` — Kotlin/JVM payment server foundation
 
 The mandatory runtime communication path is:
@@ -114,11 +114,25 @@ supported versions are 1. Compatibility negotiation is not authentication or
 authorization.
 
 The Android library enables AIDL locally and has no payment-domain dependency.
-Future Android applications may depend on it, but neither application currently
-consumes it. No runtime IPC or payment request/result transport exists yet:
-the Payment Service is unimplemented and Merchant remains unbound. Domain models
-remain framework-independent. This uses ordinary Android Gradle Plugin AIDL,
-with repository-owned version metadata.
+`:apps:payment-service` now depends on the contract and contains
+`com.paynexus.paymentservice.PaymentService`, an Android bound Service owning a
+private generated `IPaymentService.Stub` implementation. `getContractVersion()`
+returns `PaymentIpcContract.CURRENT_VERSION` without side effects.
+
+The Service is explicitly exported for future cross-application binding and
+protected by `com.paynexus.paymentservice.permission.BIND_PAYMENT_SERVICE`, a
+signature-level permission defined only by Payment Service. It has no intent
+filter; future clients must target the component explicitly and request the
+permission with a compatible signing identity. Compatibility is not authorization.
+
+Payment Service remains headless, with no custom process, started/foreground
+service behavior, payment-domain dependency, networking, or persistence. Merchant
+remains unbound and does not consume the contract or request the permission yet.
+No payment request/result transport exists. Cross-application Binder integration
+and runtime permission-enforcement tests remain pending the client boundary.
+Domain models remain framework-independent. This uses ordinary Android Gradle
+Plugin AIDL, with repository-owned version metadata. See
+[Service shell verification](docs/engineering/testing-strategy.md#payment-service-shell-verification).
 
 ```bash
 ./gradlew :payment:contract:test

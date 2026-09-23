@@ -12,7 +12,8 @@ Merchant also has local JVM tests for TRY parsing, integer formatting, and
 synchronous ViewModel state. There is no shared testing module, mocking library,
 Compose instrumentation infrastructure, or emulator CI. The Android IPC contract
 has local JVM compatibility-policy tests and compiler/artifact verification.
-Runtime IPC, persistence, server, and end-to-end infrastructure remains future direction.
+The Payment Service shell implements the version query; cross-application IPC
+integration, persistence, server, and end-to-end test infrastructure remain future work.
 
 ## Philosophy and Naming
 
@@ -233,16 +234,78 @@ Compose, Lifecycle, network, or persistence stacks. Distinguish Kotlin/Android
 library support and test-only JUnit dependencies from application dependencies.
 
 No instrumentation, screenshots, or emulator infrastructure is added in PNX-011.
-There is no Service implementation, Merchant client, binding, second-process
-interaction, or Binder lifecycle. Compilation and in-process fakes cannot prove
-remote marshalling, process death, permission enforcement, or cross-process
-correctness. PNX-012 through PNX-015 must introduce appropriate runtime coverage
+PNX-012 now supplies the Service implementation, but there is no Merchant client,
+binding, second-process interaction, or client Binder lifecycle. Compilation and
+in-process fakes cannot prove remote marshalling, process death, permission
+enforcement, or cross-process correctness. PNX-013 through PNX-015 must introduce appropriate runtime coverage
 as those boundaries exist: real binding, unavailable service, version mismatch,
 disconnect/death, permissions, and request/response transport.
 
 Remote `CI / Quality and Build` results and required-check enforcement remain
 separate verification after authorized commit/push/PR work. Local compilation
 does not establish remote CI success or runtime Binder correctness.
+
+## Payment Service Shell Verification
+
+PNX-012 adds a headless Android bound Service with one private generated
+`IPaymentService.Stub` implementation. It returns `PaymentIpcContract.CURRENT_VERSION`
+and consumes only `:payment:contract`. The manifest exports the Service with the
+signature permission `com.paynexus.paymentservice.permission.BIND_PAYMENT_SERVICE`,
+owned only by Payment Service, and no intent filter or custom process.
+Merchant remains unbound and does not request the permission. There is no payment
+transport, networking, persistence, DI, or direct coroutine infrastructure.
+
+The task-specific strategy is compilation, artifact/manifest/dependency inspection,
+and regression of the four existing contract compatibility tests. No Service JVM
+test, Robolectric, mocks, or new instrumentation infrastructure is added solely
+for a constant-returning Stub. Direct in-process invocation cannot establish
+cross-application binding, component resolution, permission enforcement, process
+separation, or disconnect/death behavior. Real integration coverage belongs with
+the Merchant client in PNX-013/PNX-014; payment transport follows in PNX-015.
+
+Using JDK 17 and SDK Platform 37, run:
+
+```bash
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :apps:payment-service:lint
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :apps:payment-service:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+```
+
+Inspect the actual contract XML reports for method counts, failures, errors, and
+skips; record fresh/cached/up-to-date task execution. Discover merged manifests
+and the debug APK under `apps/payment-service/build/` rather than assuming AGP
+output paths. Verify the effective Service class, `exported="true"`, exact bind
+permission, and its single `signature` declaration. Confirm no Service intent
+filter, launcher, custom process, Internet/foreground-service permission, or
+unexpected application-owned component. Distinguish library-generated entries.
+
+Inspect the APK manifest, class inventory, and resources: the Service and generated
+contract must be packaged, without Merchant code, payment transport, Compose,
+network/persistence stacks, or sensitive configuration. Inspect both runtime
+dependency graphs for `:payment:contract` and absence of payment domain, Merchant,
+design system, server, Lifecycle UI, networking, persistence, and DI dependencies.
+Review the source diff for secrets, signing material, and caller/payment logging.
+
+If a local device/emulator is available:
+
+```bash
+./gradlew :apps:payment-service:installDebug
+adb shell dumpsys package com.paynexus.paymentservice
+```
+
+Record device/API, installation result, and installed Service/permission metadata.
+Do not create a temporary client. Package inspection does not prove binding or
+signature-permission enforcement. Report exact commands/results, discovered
+artifact paths, dependency findings, and limitations. Cross-app runtime correctness
+remains unverified until real client tests exist. Remote `CI / Quality and Build`
+and required-check enforcement remain separate checks after authorized Git work.
 
 ## Design System Foundation Verification
 

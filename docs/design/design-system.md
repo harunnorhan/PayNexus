@@ -7,7 +7,8 @@ It owns reusable visual primitives, not Merchant screens or payment behavior.
 It has no project-module dependencies. It must not depend on payment domain or
 contract models, either Android application, or server modules. ViewModels,
 navigation, repositories, networking, persistence, and IPC do not belong here.
-Merchant now consumes this library in its launchable, feature-neutral shell.
+Merchant consumes this library in its amount-entry screen. Amount parsing,
+validation, state ownership, and local confirmation remain Merchant responsibilities.
 
 ## Build and dependencies
 

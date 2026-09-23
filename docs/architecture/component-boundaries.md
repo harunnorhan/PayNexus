@@ -198,14 +198,34 @@ navigation, repository, IPC, network, persistence, or payment orchestration.
 Features map business state to presentation outside the design system.
 See the [Design System guide](../design/design-system.md) for its current APIs.
 
-## Merchant Shell Foundation
+## Merchant Amount Entry
 
-`:apps:merchant` owns the launcher `MainActivity` in `com.paynexus.merchant`
-and `MerchantApp`/`MerchantShell` in `com.paynexus.merchant.ui`. The Activity installs
-`PayNexusTheme`; the root delegates to a stateless shell with resource-backed copy,
-a themed surface, safe drawing insets, and local scrolling for constrained layouts.
+`:apps:merchant` owns launcher `MainActivity` in `com.paynexus.merchant`,
+`MerchantApp` in `com.paynexus.merchant.ui`, and the amount-entry feature in
+`com.paynexus.merchant.feature.amountentry`. The Activity installs `PayNexusTheme`;
+the root delegates through `AmountEntryRoute` to stateless `AmountEntryScreen`.
+The obsolete placeholder shell is removed. The screen owns its themed surface,
+one safe-drawing inset boundary, and scrolling for constrained height/IME use.
+The Activity explicitly requests `adjustResize` so IME insets can reach the
+edge-to-edge content, including on older supported Android versions.
 
-Its only project dependency is `:design-system`. No payment feature, ViewModel,
-navigation, service binding, network, or persistence is implemented. Design System
-remains independent of Merchant and owns no application window/inset behavior.
-The mandatory future payment path remains Merchant -> Payment Service -> Server.
+Merchant explicitly depends on `:design-system` and `:payment:domain`. The pure
+`TryAmountParser` converts approved ASCII decimal input to Long minor units using
+overflow guards before arithmetic. Both dot and comma mean a decimal separator;
+at most two fractional digits are allowed. The ViewModel creates positive
+`PaymentAmount(Money(minorUnits, CurrencyCode.TRY))` candidates through the existing
+domain constructors. Zero remains a numeric parse result but cannot be confirmed.
+`TryAmountFormatter` formats canonical amounts with integer division/remainder.
+No domain constructors or Design System APIs change.
+
+`AmountEntryViewModel` owns immutable presentation snapshots through synchronous
+Compose observable state. It retains only the canonical candidate, not a parallel
+minor-unit field. Confirmation retains a local selected amount; every edit event,
+even identical text, clears confirmation. Configuration recreation retains state;
+process recreation starts empty. No persistence or asynchronous work is introduced.
+
+Local confirmation is not payment initiation, authorization, or a payment result.
+No identifiers, payment lifecycle models, service binding, network, or persistence
+are introduced. Payment Service remains unconnected. Design System owns no amount
+entry, domain models, or window/inset behavior. The mandatory future payment path
+remains Merchant -> Payment Service -> Server.

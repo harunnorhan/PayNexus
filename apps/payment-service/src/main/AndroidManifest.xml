@@ -1,12 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <permission
+        android:name="com.paynexus.paymentservice.permission.BIND_PAYMENT_SERVICE"
+        android:protectionLevel="signature" />
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/ic_app"
         android:label="PayNexus Payment Service"
-        android:supportsRtl="true" />
+        android:supportsRtl="true">
+        <service
+            android:name=".PaymentService"
+            android:exported="true"
+            android:permission="com.paynexus.paymentservice.permission.BIND_PAYMENT_SERVICE" />
+    </application>
 
 </manifest>

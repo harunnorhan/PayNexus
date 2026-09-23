@@ -9,3 +9,7 @@ android {
         applicationId = "com.paynexus.paymentservice"
     }
 }
+
+dependencies {
+    implementation(project(":payment:contract"))
+}

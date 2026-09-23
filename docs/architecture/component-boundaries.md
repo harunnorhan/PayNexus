@@ -203,16 +203,32 @@ server fallback. Future version bumps must explicitly reconsider both constants,
 backward compatibility, method availability, and client/service negotiation.
 Compatibility negotiation is not authentication or authorization.
 
-The synchronous version query must eventually return a constant or equally
-trivial value without side effects, file IO, network, database, or payment work.
+The Service returns `PaymentIpcContract.CURRENT_VERSION` from the synchronous
+version query without side effects, file IO, network, database, or payment work.
 Remote calls still have IPC latency and must not block the client main thread.
 Future payment execution remains asynchronous under ADR-0002.
 
-Neither Android application currently depends on the contract. Future dependency
-direction is `:apps:merchant -> :payment:contract <- :apps:payment-service`.
-No runtime IPC exists: Payment Service remains unimplemented and Merchant unbound.
-PNX-012 owns the Service shell, `android:exported`, `android:permission`, and caller
-validation. PNX-013/PNX-014 own Merchant binding, connection state, unavailable
+PNX-012 establishes `:apps:payment-service -> :payment:contract` as the only
+application dependency on the contract. `com.paynexus.paymentservice.PaymentService`
+extends Android `Service`, owns one private immutable anonymous
+`IPaymentService.Stub`, and returns it from `onBind()`. The trivial version query
+can execute on Binder threads without mutable state or asynchronous work.
+
+The manifest explicitly exports the Service and protects it with
+`com.paynexus.paymentservice.permission.BIND_PAYMENT_SERVICE`, defined once by
+Payment Service with `signature` protection. This is the shell's caller-admission
+boundary for clients with a compatible signing identity. It does not replace
+future payment-input validation. No intent filter, custom process, or additional
+lifecycle overrides are needed. The application remains headless and bound-only,
+without UI, foreground-service behavior, domain operations, networking,
+persistence, DI, or direct coroutine infrastructure.
+
+Merchant remains unbound, has no contract dependency, and does not yet request
+the bind permission. Future dependency direction is
+`:apps:merchant -> :payment:contract <- :apps:payment-service`; future binding
+must target the Service explicitly. Cross-application Binder integration and
+permission-enforcement testing remain pending. PNX-013/PNX-014 own Merchant
+binding, connection state, unavailable
 service/version mismatch behavior, reconnect, and Binder death lifecycle
 (`DeathRecipient`, `linkToDeath`, and `unlinkToDeath`).
 

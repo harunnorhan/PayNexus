@@ -10,8 +10,9 @@ domain constructors and accept explicit reason or failure overrides.
 
 Merchant also has local JVM tests for TRY parsing, integer formatting, and
 synchronous ViewModel state. There is no shared testing module, mocking library,
-Compose instrumentation infrastructure, or emulator CI. IPC, persistence, server,
-and end-to-end infrastructure described below remains future direction.
+Compose instrumentation infrastructure, or emulator CI. The Android IPC contract
+has local JVM compatibility-policy tests and compiler/artifact verification.
+Runtime IPC, persistence, server, and end-to-end infrastructure remains future direction.
 
 ## Philosophy and Naming
 
@@ -56,9 +57,13 @@ Use Android tests for lifecycle-sensitive behavior, navigation,
 and Compose interactions or accessibility that require the platform. Keep
 Android-specific rules and helpers out of pure Kotlin payment test support.
 
-### IPC — Future
+### IPC
 
-Use instrumentation and integration tests for AIDL contracts, service binding,
+The contract foundation tests deterministic version compatibility on the JVM and
+uses Android library compilation plus generated API/artifact inspection. See
+[IPC contract verification](#ipc-contract-foundation-verification).
+
+Future runtime work must use instrumentation and integration tests for service binding,
 Binder death, unavailable services, version compatibility, and permission or
 input-validation boundaries. In-process fakes cannot establish correctness of
 the real cross-process contract.
@@ -178,6 +183,66 @@ After an authorized Pull Request is created, observe the actual CI result and
 verify required-check enforcement separately. A workflow file alone does not
 prove repository protection settings or CI success. Report only commands and
 results actually observed, including limitations and skipped or cached work.
+
+## IPC Contract Foundation Verification
+
+PNX-011 adds four local JVM test methods in `:payment:contract`, using the existing
+`kotlin.test`/JUnit support. They verify `supports(1)` is true and `supports(0)`,
+`supports(2)`, and `supports(-1)` are false. No mocks, Android framework calls,
+clock, randomness, or sleeps are involved.
+
+Use JDK 17 and SDK Platform 37. The module inherits minimum SDK 26 and Java 17;
+application target SDK decisions remain unchanged.
+
+```bash
+./gradlew :payment:contract:test
+./gradlew :payment:contract:assembleDebug
+./gradlew :payment:contract:lint
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :payment:contract:dependencies
+git diff --check
+./gradlew :payment:contract:test --rerun-tasks
+```
+
+Inspect HTML reports in `payment/contract/build/reports/tests/` and XML in
+`payment/contract/build/test-results/`. Report actual method counts, failures,
+errors, and skips for `testDebugUnitTest`, which the current AGP configuration
+runs through `:payment:contract:test`. The suite contains four methods. Do not
+infer release-variant test execution from a successful build; if additional test
+variants are configured later, report them separately. Record fresh, cached, or
+up-to-date execution; use the focused rerun above for fresh evidence.
+
+After assembly, discover actual generated outputs under `payment/contract/build/`
+rather than assuming an AGP-specific directory. Inspect generated
+`com.paynexus.payment.contract.IPaymentService` for `getContractVersion()`, its
+`Stub`, transaction dispatch, and proxy implementation. Inspect the output AAR
+and its `classes.jar` for compiled interface, Stub/proxy support, and
+`PaymentIpcContract`. Do not edit generated files or add handwritten substitutes.
+Inspect the packaged manifest and complete archive/class inventory for absence
+of application components, permissions, Service/Merchant implementations, payment
+request/result models, and sensitive configuration. No source manifest is needed
+with the current convention and AGP: assembly generates a component-free manifest
+with package `com.paynexus.payment.contract` and minimum SDK 26 in the AAR.
+
+Inspect dependency reports, including debug/release runtime classpaths if needed.
+The contract must not depend on payment domain, either application, server modules,
+Compose, Lifecycle, network, or persistence stacks. Distinguish Kotlin/Android
+library support and test-only JUnit dependencies from application dependencies.
+
+No instrumentation, screenshots, or emulator infrastructure is added in PNX-011.
+There is no Service implementation, Merchant client, binding, second-process
+interaction, or Binder lifecycle. Compilation and in-process fakes cannot prove
+remote marshalling, process death, permission enforcement, or cross-process
+correctness. PNX-012 through PNX-015 must introduce appropriate runtime coverage
+as those boundaries exist: real binding, unavailable service, version mismatch,
+disconnect/death, permissions, and request/response transport.
+
+Remote `CI / Quality and Build` results and required-check enforcement remain
+separate verification after authorized commit/push/PR work. Local compilation
+does not establish remote CI success or runtime Binder correctness.
 
 ## Design System Foundation Verification
 

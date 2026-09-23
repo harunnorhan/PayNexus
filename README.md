@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain and Merchant amount entry are implemented; runtime payment integration remains future work.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant amount entry, and V1 IPC contract foundation are implemented; runtime payment integration remains future work.
 
 ## Documentation
 
@@ -60,7 +60,7 @@ PayNexus/
 ### Runtime Components
 
 - `apps:merchant` — Merchant-facing Android application
-- `apps:payment-service` — Headless Android payment service
+- `apps:payment-service` — Headless Android application foundation; Android Service implementation is pending
 - `server:*` — Kotlin/JVM payment server foundation
 
 The mandatory runtime communication path is:
@@ -73,7 +73,7 @@ The Merchant Application must never communicate with the Payment Server directly
 
 - `core:model` — Framework-independent shared core models
 - `core:domain` — Framework-independent core domain logic
-- `payment:contract` — Payment boundary contracts
+- `payment:contract` — Android-specific versioned AIDL/Binder contract
 - `payment:domain` — Payment-specific domain logic
 - `server:domain` — Server-side domain layer
 - `server:application` — Server application/use-case layer
@@ -103,6 +103,33 @@ Run the deterministic JVM domain tests with:
 ```bash
 ./gradlew :payment:domain:test
 ```
+
+### IPC Contract Foundation
+
+`:payment:contract` owns the versioned AIDL/Binder contract in
+`com.paynexus.payment.contract`. V1 exposes only `IPaymentService.getContractVersion()`.
+`PaymentIpcContract.supports(remoteVersion)` accepts version 1 and rejects all
+other versions, including unknown future versions. Both current and minimum
+supported versions are 1. Compatibility negotiation is not authentication or
+authorization.
+
+The Android library enables AIDL locally and has no payment-domain dependency.
+Future Android applications may depend on it, but neither application currently
+consumes it. No runtime IPC or payment request/result transport exists yet:
+the Payment Service is unimplemented and Merchant remains unbound. Domain models
+remain framework-independent. This uses ordinary Android Gradle Plugin AIDL,
+with repository-owned version metadata.
+
+```bash
+./gradlew :payment:contract:test
+./gradlew :payment:contract:assembleDebug
+./gradlew :payment:contract:lint
+```
+
+JVM policy tests and generated API/artifact inspection verify this foundation;
+Binder runtime instrumentation remains pending. See
+[IPC verification](docs/engineering/testing-strategy.md#ipc-contract-foundation-verification)
+and [contract boundaries](docs/architecture/component-boundaries.md#ipc-contract-foundation).
 
 ## Build Logic
 

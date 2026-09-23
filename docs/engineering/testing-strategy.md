@@ -8,9 +8,10 @@ test-source helpers, `declinedPaymentOutcome` and `failedPaymentOutcome`, share
 outcome setup between outcome and lifecycle tests. They delegate directly to
 domain constructors and accept explicit reason or failure overrides.
 
-There is no dedicated shared testing module or test convention plugin. Android,
-IPC, persistence, server, and end-to-end test infrastructure described below is
-future direction, not implemented capability.
+Merchant also has local JVM tests for TRY parsing, integer formatting, and
+synchronous ViewModel state. There is no shared testing module, mocking library,
+Compose instrumentation infrastructure, or emulator CI. IPC, persistence, server,
+and end-to-end infrastructure described below remains future direction.
 
 ## Philosophy and Naming
 
@@ -47,10 +48,11 @@ those behaviors exist. Introduce controlled time, identifiers, or coroutine
 scheduling only when an actual production abstraction and test require them.
 Do not equate a timeout with confirmed payment failure.
 
-### Android — Future
+### Android
 
-Use local tests for ViewModel and Flow/StateFlow behavior where framework access
-is unnecessary. Use Android tests for lifecycle-sensitive behavior, navigation,
+Merchant currently tests synchronous ViewModel behavior locally without framework
+access. Use local tests for future Flow/StateFlow behavior where appropriate.
+Use Android tests for lifecycle-sensitive behavior, navigation,
 and Compose interactions or accessibility that require the platform. Keep
 Android-specific rules and helpers out of pure Kotlin payment test support.
 
@@ -191,22 +193,32 @@ interaction and accessibility coverage remain future work. Custom behavior must
 trigger a fresh testing decision rather than inheriting this limited strategy.
 See [Design System verification](../design/design-system.md#verification).
 
-## Merchant Shell Verification
+## Merchant Amount Entry Verification
 
-PNX-009 adds a launchable Compose Activity and neutral shell, with no feature
-interaction, business state, or navigation. Its approved verification consists of
-compilation, lint, static analysis, debug previews, and manual runtime inspection.
-No Compose instrumentation or screenshot infrastructure is introduced. This limited
-strategy applies only to this shell; PNX-010 must choose automated behavioral tests
-when interaction/state appears. Existing domain tests remain unchanged.
+PNX-010 tests `TryAmountParser`, `TryAmountFormatter`, and `AmountEntryViewModel`
+with `kotlin.test`/JUnit in the Merchant test source set. Parser coverage includes
+whole/fractional values, both separators, leading separators/zeros, empty and
+incomplete input, zero, malformed/unsupported input, and exact Long boundaries.
+Syntax is validated before overflow classification. Formatting tests include the
+smallest and maximum positive amounts, using exact strings and integer values.
+ViewModel tests cover canonical TRY construction, validation, enablement, local
+confirmation, no-op invalid/repeated confirmation, immutable snapshots, and clearing
+confirmation on every edit event, including identical text. Existing domain
+invariant tests remain unchanged.
 
-Use JDK 17 and SDK Platform 37. Compile SDK is 37; both applications retain explicit
-target SDK 36 and minimum SDK 26. Verify regenerated manifests rather than assuming
-these values from successful compilation.
+The task-specific testing decision is JVM behavioral tests plus local runtime
+interaction checks. The screen is thin wiring over deterministic state; introducing
+runner/device-test infrastructure for this screen is disproportionate. This does
+not establish automated UI/accessibility coverage or exempt future navigation,
+Binder lifecycle, payment-result flows, or complex interactions from reconsidering
+Compose instrumentation. No screenshots/goldens or emulator CI are introduced.
+
+Use JDK 17 and SDK Platform 37. Compile SDK is 37, target SDK 36, and minimum SDK 26.
 
 ```bash
-./gradlew -p build-logic :convention:build
-./gradlew :apps:merchant:assembleDebug :design-system:assembleDebug :apps:payment-service:assembleDebug
+./gradlew :apps:merchant:test
+./gradlew :payment:domain:test
+./gradlew :apps:merchant:assembleDebug
 ./gradlew :apps:merchant:lint
 ./gradlew spotlessCheck
 ./gradlew detekt
@@ -217,33 +229,54 @@ these values from successful compilation.
 git diff --check
 ```
 
-Inspect manifests for the intended launcher, label, window theme, SDKs, permissions,
-and exported components. Inspect dependency reports for Activity 1.13.0, Compose
-BOM alignment, and absence of preview tooling from release runtime. AndroidX
-contributes a signature-protected dynamic-receiver permission, a non-exported
-startup provider, and a profile-install receiver protected by `android.permission.DUMP`.
-Debug tooling also contributes an exported `PreviewActivity`; it must be absent
-from release. These library manifest entries are distinct from the single
-application-owned launcher Activity. No network permission is requested.
+Inspect Merchant HTML reports under `apps/merchant/build/reports/tests/` and XML
+under `apps/merchant/build/test-results/`, for `testDebugUnitTest` and
+`testReleaseUnitTest` when executed. Record test-method counts, failures, errors,
+skips, and whether tasks executed freshly, from cache, or were up-to-date. Table
+cases are not additional JUnit test methods. Use `:apps:merchant:test --rerun-tasks`
+if fresh evidence is needed. Inspect domain reports separately.
 
-Render all six `MerchantShellPreviews` scenarios in Android Studio: light, dark,
-narrow, wide, large font, and landscape. Inspect wrapping and clipping. Preview
-compilation alone does not establish that rendering was inspected.
+Dependency reports must resolve Lifecycle to stable 2.11.0, retain Compose BOM
+alignment, and exclude preview tooling from release runtime. Merchant declares no
+direct coroutine dependency or asynchronous feature behavior. Inspect for absence
+of network/persistence stacks and Payment Service implementation dependencies.
+Inspect merged manifests for launcher, SDKs, `adjustResize`, permissions, and
+exported components. Existing AndroidX startup/profile-install/dynamic-receiver
+entries are library contributions, not new Merchant components. Debug-only
+PreviewActivity must remain absent from release; no network permission is intended.
+
+Debug-only `AmountEntryPreviews` cover empty, valid whole, fractional comma,
+incomplete, invalid zero/format, overflow, confirmed, dark, narrow, large font,
+landscape, and wide scenarios. They pass explicit synthetic state to stateless
+content, never instantiate a ViewModel or service. Render them in Android Studio
+and inspect clipping/wrapping. Compilation alone is not rendered-preview evidence.
 
 On an available local device/emulator:
 
-1. Run `./gradlew :apps:merchant:installDebug`.
-2. Find the icon and **PayNexus Merchant** label in the launcher and tap it.
-3. Confirm startup without a crash or framework action bar; inspect the Compose
-   text, Design System typography/spacing, and themed background.
-4. Repeat in light/dark mode, normal/2x font scale, narrow portrait, landscape,
-   and a wider window where available. Check scrolling and text wrapping.
-5. Check status/navigation bars and cutouts, including gesture and three-button
-   navigation where available. Important content must remain within safe insets.
-6. With TalkBack, check text reading order, title heading, and scrolling.
-7. Record device/API and checks actually performed. Report unavailable scenarios
-   as pending; installation alone is not launch verification.
+1. Run `./gradlew :apps:merchant:installDebug` and open **PayNexus Merchant** from
+   the launcher. Confirm startup and amount entry without a framework action bar.
+2. Exercise `12`, `12.3`, `12,34`, `.5`, and `,5`; verify enabled confirmation and
+   exact canonical two-decimal display after confirmation.
+3. Exercise `12.`, zero, empty, negative, malformed and overflow input. Paste or
+   use hardware input where the decimal keyboard lacks characters. Confirm no
+   crash and disabled confirmation; intermediate copy must remain neutral.
+4. Confirm using button and IME; verify local **Amount ready** and
+   **No payment has been started.** Editing again must clear confirmation.
+5. Check keyboard usability and scrolling so the action remains reachable. The
+   screen owns safe-drawing padding once, including IME insets, before token spacing.
+6. Repeat in light/dark, normal/2x font, narrow portrait, landscape/reduced height,
+   and a wider window where practical. Inspect system bars/cutouts and gesture/
+   three-button navigation where available.
+7. Rotate while editing and after confirming: ViewModel state should survive
+   ordinary configuration recreation. Process recreation intentionally starts empty.
+8. With TalkBack where practical, inspect heading, label, reading order, localized
+   error semantics, disabled action, and polite ready announcement.
+9. Inspect manifest, source, and runtime logs for absence of payment-service/
+   network behavior or raw-input logging. Record device/API, keyboard, exercised
+   scenarios, and anything unavailable. Synthetic data only.
 
-These are verification instructions, not a claim that runtime or preview inspection
-has occurred. Remote `CI / Quality and Build` still requires separately authorized
-PR work and observation of the completed run and required-check enforcement.
+This checklist is not a claim that all runtime or preview scenarios were observed.
+Record actual evidence with each implementation report; JVM tests cannot establish
+IME, inset, lifecycle recreation, or TalkBack correctness. Remote
+`CI / Quality and Build` and required-check enforcement must be observed later,
+after separate commit/push/PR authorization.

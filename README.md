@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain foundation is implemented; runtime payment integration remains future work.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain and Merchant amount entry are implemented; runtime payment integration remains future work.
 
 ## Documentation
 
@@ -25,7 +25,7 @@ Key documents:
 - [System Context](docs/architecture/system-context.md)
 - [Component Boundaries](docs/architecture/component-boundaries.md)
 - [Engineering Principles](docs/engineering/engineering-principles.md)
-- [Testing Strategy](docs/engineering/testing-strategy.md) — Current domain JVM tests and local outcome samples, with guidance for future testing layers.
+- [Testing Strategy](docs/engineering/testing-strategy.md) — Domain and Merchant JVM tests, with local runtime verification and guidance for future testing layers.
 - [Architecture Decision Records](docs/adr/)
 
 ## Project Structure
@@ -83,7 +83,7 @@ The Merchant Application must never communicate with the Payment Server directly
 
 `design-system` provides the provisional Compose theme, compact spacing tokens,
 and `PayNexusButton`, with debug-only previews. It is independent of payment
-models and is consumed by the launchable Merchant shell. See the
+models and is consumed by Merchant amount entry. See the
 [Design System guide](docs/design/design-system.md) for APIs and verification.
 
 ### Payment Domain Foundation
@@ -194,26 +194,47 @@ Use the Gradle Wrapper:
 
 A globally installed Gradle distribution is not required.
 
-## Merchant Application Shell
+## Merchant Amount Entry
 
-Merchant launches through `MainActivity -> PayNexusTheme -> MerchantApp -> MerchantShell`.
-It currently displays only neutral application identity and supporting text; payment
-features, service binding, navigation, networking, and persistence remain future work.
-Compose theme and spacing come from `:design-system`.
+Merchant launches through
+`MainActivity -> PayNexusTheme -> MerchantApp -> AmountEntryRoute -> AmountEntryScreen`.
+The feature belongs to `com.paynexus.merchant.feature.amountentry` inside
+`:apps:merchant`; no extra feature module is needed. Merchant explicitly depends
+on `:payment:domain` to construct `PaymentAmount(Money(minorUnits, CurrencyCode.TRY))`.
+Design System remains independent and supplies theme, spacing, and the confirmation button.
+
+Input uses ASCII digits and either a dot or comma as a decimal separator, with
+at most two fractional digits. Leading separators and leading zeros are accepted.
+Empty input and trailing separators are intermediate, nonconfirmable states.
+Whitespace, signs, unsupported characters, mixed/repeated separators, excess
+fractional digits, and technical Long overflow cannot be confirmed. Text is
+preserved exactly: nothing is trimmed, filtered, rounded, or silently truncated.
+Parsing and formatting use string/integer operations only; no transaction business
+maximum is imposed. Zero parses numerically but cannot create a `PaymentAmount`.
+
+`AmountEntryViewModel` owns synchronous Compose state. The candidate is stored only
+as a canonical `PaymentAmount`; parsed minor units are transient. Every edit event,
+including identical text, clears local confirmation. Confirming displays
+**Amount ready: TRY 12.34** and **No payment has been started.** State survives
+configuration recreation but starts empty after process recreation. Payment Service
+remains unconnected: there is no payment initiation, identifier generation,
+networking, Binder, or persistence.
 
 Android conventions use compile SDK 37, minimum SDK 26, and Java 17. Install SDK
-Platform 37. Applications explicitly retain target SDK 36; this is not a target-SDK
-migration. `paynexus.android.compose` shares compiler enablement and narrow Compose
-naming allowances; dependencies and their scopes remain module-owned.
+Platform 37. Applications retain target SDK 36. Merchant directly declares stable
+Lifecycle ViewModel and ViewModel Compose 2.11.0. There is no feature StateFlow,
+coroutine scheduling, or direct coroutine dependency.
 
-Build and install on a connected local emulator/device:
+Build, test, and install on a connected local emulator/device:
 
 ```bash
+./gradlew :apps:merchant:test
 ./gradlew :apps:merchant:assembleDebug
 ./gradlew :apps:merchant:installDebug
 ```
 
 Open **PayNexus Merchant** from the launcher. Follow the
-[Merchant runtime verification checklist](docs/engineering/testing-strategy.md#merchant-shell-verification).
-Installation and compilation alone do not establish successful launch or visual
-correctness. PNX-010 must reevaluate automated tests when interaction is introduced.
+[Merchant verification checklist](docs/engineering/testing-strategy.md#merchant-amount-entry-verification).
+Parser, formatter, and ViewModel behavior have JVM tests. PNX-010 intentionally
+adds no Compose instrumentation infrastructure; platform interaction still needs
+local runtime verification. Compilation does not establish visual correctness.

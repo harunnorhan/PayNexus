@@ -13,6 +13,7 @@ android {
 
 dependencies {
     implementation(project(":design-system"))
+    implementation(project(":payment:contract"))
     implementation(project(":payment:domain"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.runtime)

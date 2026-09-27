@@ -13,8 +13,10 @@ synchronous ViewModel state. There is no shared testing module, mocking library,
 Compose instrumentation infrastructure, or emulator CI. The Android IPC contract
 has local JVM compatibility-policy tests and compiler/artifact verification.
 The Payment Service shell implements the version query. PNX-013 adds the Merchant
-binding client with manual cross-application verification; automated IPC integration,
-persistence, server, and end-to-end test infrastructure remain future work.
+binding client with manual cross-application verification. PNX-014 adds deterministic
+Merchant connection-policy tests, runtime version validation, Binder death monitoring,
+and bounded recovery. Automated IPC integration, persistence, server, and end-to-end
+test infrastructure remain future work.
 
 ## Philosophy and Naming
 
@@ -502,3 +504,176 @@ rapid background during Binding, and process-death recovery. Automated Binder
 instrumentation remains absent. This verifies the exercised development path,
 not comprehensive permission enforcement or Binder resilience. Remote CI and
 repository settings were not changed or verified by this local work.
+
+## Binder Compatibility and Recovery Verification (PNX-014)
+
+`PaymentConnectionPolicyTest` adds deterministic JVM coverage for the Merchant-local
+connection policy: acquisition versus readiness, strict version acceptance,
+terminal no-retry outcomes, opaque attempt/session ownership, duplicate events,
+one recovery per started interval, stale results, stop-before-recovery, and reset
+only on a genuine new lifecycle interval. The policy contains no Android objects;
+these tests do not prove platform binding, exception delivery, death registration,
+permission enforcement, or cross-process marshalling. Existing amount-entry and
+contract tests remain intact. No mocking, coroutine, or instrumentation dependency
+is introduced.
+
+The production client keeps Android resources private, links death before querying,
+and runs the synchronous query on `paynexus-contract-version`, never on main.
+Only supported compatibility establishes `Ready`. Death/disconnect/binding-died
+and already-dead Binder failures permit one recovery; false bind, missing Service,
+permission denial, null binding, incompatible versions, generic query failures,
+and worker rejection do not. Duplicate loss events cannot create another recovery.
+Stop invalidates current work and recovery; destroy closes the worker.
+
+Use JDK 17 and SDK Platform 37 from the repository root:
+
+```bash
+./gradlew :apps:merchant:test --rerun-tasks
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew :apps:merchant:assembleDebug
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :apps:merchant:lint
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :apps:merchant:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:merchant:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+```
+
+Inspect fresh XML/HTML reports for exact method counts, failures, errors, skips,
+and executed/cached/up-to-date status. Inspect merged debug/release manifests and
+dependency graphs for preserved permissions, explicit application boundaries, and
+absence of new network, persistence, DI, retry, or worker-library dependencies.
+Remote CI and required-check enforcement are separate from local verification.
+
+### Runtime Procedure
+
+Use a disposable development emulator with explicit serial selection; never
+uninstall packages or kill processes on the owner's primary device. Discover
+actual APK paths after assembly and select `PNX_DEVICE`, `PNX_SERVICE_APK`, and
+`PNX_MERCHANT_APK` accordingly:
+
+```bash
+adb devices -l
+adb -s "$PNX_DEVICE" install -r "$PNX_SERVICE_APK"
+adb -s "$PNX_DEVICE" install -r "$PNX_MERCHANT_APK"
+adb -s "$PNX_DEVICE" shell pm path com.paynexus.paymentservice
+adb -s "$PNX_DEVICE" shell pm path com.paynexus.merchant
+adb -s "$PNX_DEVICE" shell am start -n com.paynexus.merchant/.MainActivity
+adb -s "$PNX_DEVICE" shell dumpsys activity services com.paynexus.paymentservice
+```
+
+Use debugger observation rather than permanent application diagnostics. Observe
+one explicit bind, a linked death recipient, `CheckingCompatibility`, worker-thread
+version query returning 1, and main-thread `Ready`. Background/foreground twice,
+check release/fresh attempt identities, and rotate to exercise disposal/recreation.
+Repeated bind and unbind calls must not duplicate registrations or crash.
+
+While Merchant remains started, obtain the actual Service PID and kill only that
+verified PID on the disposable emulator, where the debug package permits it:
+
+```bash
+adb -s "$PNX_DEVICE" shell pidof com.paynexus.paymentservice
+adb -s "$PNX_DEVICE" shell run-as com.paynexus.paymentservice kill -9 "$PNX_SERVICE_PID"
+```
+
+Verify the old PID disappeared. Observe the death recipient, proxy cleanup, and
+at most one new bind/handshake. Kill the recovered Service again in that same
+started interval and verify no third attempt. Background/foreground restores a
+fresh budget. Exercise stop while recovery is queued where debugger/platform
+ordering permits; verify stale recovery does not rebind after stop. `am force-stop`
+is a different package-stop scenario, not ordinary process-death evidence;
+`am kill` may leave a foreground-bound process alive. Do not infer death from
+command success alone. No `pm clear` is needed.
+
+For absence, background Merchant, uninstall only Payment Service on the disposable
+emulator, then foreground Merchant. Verify explicit unavailability and no retry
+loop. Reinstall Service and perform a stop/start to reconnect. Enter synthetic
+`12.34` and confirm the local amount-ready/no-payment text in both ready and
+unavailable conditions. Inspect source, effective manifests, and dependencies for
+absence of payment transport/networking; log silence is not sufficient proof.
+
+Unsupported versions, null binding, permission denial, generic RemoteException,
+link/death races, and stale callback delivery need separate evidence. Do not add
+production fault-injection hooks or modify the Service solely to exercise them.
+List each unexecuted runtime case explicitly. JVM policy events are not actual
+Android fault injection.
+
+### Known Runtime Limits
+
+Cancellation removes queued tasks and rejects late results, but cannot guarantee
+termination of an in-flight synchronous Binder transaction. No handshake deadline
+is implemented. A hung transaction may occupy the single worker and delay a later
+query; lifecycle stop still invalidates ownership and releases binding. A destroyed
+client's blocked worker may remain until the transaction ends, without retaining
+Activity Context. `Ready` means compatibility was confirmed with no observed death;
+it is not a future liveness guarantee or authorization check. Payment transport,
+payment timeout/retry semantics, and Service-to-Server networking remain future work.
+
+### PNX-014 Local Verification Record
+
+Observed on 2026-09-27 with OpenJDK 17.0.17 and Medium_Phone (`emulator-5554`,
+API 37), launched for this task with `-read-only -no-snapshot-save`:
+
+- Fresh Merchant `testDebugUnitTest`: 87 methods (20 connection policy, 48 parser,
+  14 ViewModel, 5 formatter), zero failures/errors/skips. The final focused
+  `--rerun-tasks` run executed all 64 actionable tasks.
+- Fresh contract `testDebugUnitTest`: 4 methods, zero failures/errors/skips;
+  the focused `--rerun-tasks` run executed all 21 actionable tasks. XML and HTML
+  reports were inspected. No release unit-test execution is claimed.
+- Both debug assemblies, Merchant lint, Spotless, Detekt, qualityCheck, and full
+  build passed together: 30 executed and 381 up-to-date actionable tasks. Initial
+  formatting, function-count, return-count, and line-length findings were fixed in
+  source; no quality configuration or suppression changed. `git diff --check`
+  passed. These are local results, not remote CI evidence.
+- Fresh debug/release Merchant dependency reports retained design-system,
+  payment-contract, and payment-domain as the direct project dependencies.
+  Existing transitive coroutines remain 1.9.0 and Lifecycle remains 2.11.0;
+  no coroutine declaration or new library was added. No network, persistence,
+  DI, retry, or WorkManager stack was introduced.
+- Both APKs installed successfully. Debug/release merged manifests preserve the
+  sole Service-owned signature permission, Merchant's permission request, exported
+  explicit Service, and no Internet/foreground-service permission. Merchant's
+  AndroidX dynamic-receiver permission remains a library contribution.
+- A host-side JDI debugger observed real `IPaymentService.Stub.Proxy` acquisition,
+  successful death linking, `CheckingCompatibility`, execution of `readVersion`
+  on `paynexus-contract-version`, the typed version result 1, and main-thread
+  transition to `Ready`. No diagnostic application logging or production hook
+  was added; temporary debugger utilities were outside the repository.
+- Two background/foreground cycles released the Service registration and obtained
+  fresh attempt/session identities. Service dumps showed no binding after stop.
+  Rotation observed old-client `close()` and a new client reaching `Ready`.
+- Ordinary process death was induced with `run-as ... kill -9` for the verified
+  Service PID 4373. `ps -p 4373` confirmed it disappeared. The debugger observed
+  the recipient on a Binder thread and main-thread cleanup/recovery. One new
+  attempt reached `Ready` in the same session with its recovery allowance used;
+  the new Service PID was 4598. Killing 4598 and confirming its disappearance
+  left `Unavailable(ConnectionLost)`, no active attempt/proxy, no pending recovery,
+  and no third bind. Subsequent lifecycle restart restored connectivity.
+- Stop during recovery was attempted with debugger-assisted Home navigation.
+  The first probe synchronously waited for input while suspending main and caused
+  an input-dispatch ANR; Android killed the debugged Merchant. This was not a
+  passing application scenario. After correcting the host probe and restarting
+  Merchant, recovery ran before Android delivered `onStop`; stop then cleared
+  the connection, with no post-stop rebind. The exact stop-before-queued-recovery
+  ordering remains runtime-unverified, with deterministic JVM coverage only.
+- With Merchant backgrounded, Payment Service was uninstalled only from the
+  disposable emulator. Foregrounding Merchant observed the false-bind cleanup
+  path, `Unavailable`, and null active resources without retry. UI automation
+  confirmed synthetic `12.34` as `Amount ready: TRY 12.34` and
+  `No payment has been started.` Service was reinstalled; a later fresh Merchant
+  lifecycle reached `Ready` with a linked Binder. The same amount confirmation
+  was observed again while ready. No exception appeared in the crash buffer;
+  the debugger-induced ANR above is recorded separately.
+
+Unverified at runtime: incompatible version, null binding, incompatible-signature
+permission denial, generic version-query RemoteException, exact already-dead/link
+race, package-update `onBindingDied`, delayed stale compatibility result, deliberate
+old ServiceConnection delivery, exact stop-before-queued-recovery ordering, repeated
+explicit bind/unbind/close invocation, and hung-query/worker-saturation behavior.
+Racing duplicate loss notifications were observed; that does not establish every
+stale-event interleaving. JVM policy tests cover decisions without claiming Android
+fault injection. No instrumentation infrastructure, server communication, payment
+transport, production signing policy, or comprehensive Binder resilience is claimed.

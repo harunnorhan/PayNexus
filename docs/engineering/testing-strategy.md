@@ -12,8 +12,9 @@ Merchant also has local JVM tests for TRY parsing, integer formatting, and
 synchronous ViewModel state. There is no shared testing module, mocking library,
 Compose instrumentation infrastructure, or emulator CI. The Android IPC contract
 has local JVM compatibility-policy tests and compiler/artifact verification.
-The Payment Service shell implements the version query; cross-application IPC
-integration, persistence, server, and end-to-end test infrastructure remain future work.
+The Payment Service shell implements the version query. PNX-013 adds the Merchant
+binding client with manual cross-application verification; automated IPC integration,
+persistence, server, and end-to-end test infrastructure remain future work.
 
 ## Philosophy and Naming
 
@@ -234,8 +235,8 @@ Compose, Lifecycle, network, or persistence stacks. Distinguish Kotlin/Android
 library support and test-only JUnit dependencies from application dependencies.
 
 No instrumentation, screenshots, or emulator infrastructure is added in PNX-011.
-PNX-012 now supplies the Service implementation, but there is no Merchant client,
-binding, second-process interaction, or client Binder lifecycle. Compilation and
+PNX-012 supplies the Service implementation and PNX-013 adds the Merchant client
+and Activity-owned binding lifecycle. Compilation and
 in-process fakes cannot prove remote marshalling, process death, permission
 enforcement, or cross-process correctness. PNX-013 through PNX-015 must introduce appropriate runtime coverage
 as those boundaries exist: real binding, unavailable service, version mismatch,
@@ -252,7 +253,8 @@ PNX-012 adds a headless Android bound Service with one private generated
 and consumes only `:payment:contract`. The manifest exports the Service with the
 signature permission `com.paynexus.paymentservice.permission.BIND_PAYMENT_SERVICE`,
 owned only by Payment Service, and no intent filter or custom process.
-Merchant remains unbound and does not request the permission. There is no payment
+At the PNX-012 baseline Merchant remained unbound; PNX-013 now requests the
+permission and owns the binding client. There is no payment
 transport, networking, persistence, DI, or direct coroutine infrastructure.
 
 The task-specific strategy is compilation, artifact/manifest/dependency inspection,
@@ -399,12 +401,104 @@ On an available local device/emulator:
    ordinary configuration recreation. Process recreation intentionally starts empty.
 8. With TalkBack where practical, inspect heading, label, reading order, localized
    error semantics, disabled action, and polite ready announcement.
-9. Inspect manifest, source, and runtime logs for absence of payment-service/
-   network behavior or raw-input logging. Record device/API, keyboard, exercised
-   scenarios, and anything unavailable. Synthetic data only.
+9. Inspect manifest, source, and runtime logs for absence of payment initiation,
+   network behavior, or raw-input logging; Activity-owned binding is expected.
+   Record device/API, keyboard, exercised scenarios, and anything unavailable.
+   Synthetic data only.
 
 This checklist is not a claim that all runtime or preview scenarios were observed.
 Record actual evidence with each implementation report; JVM tests cannot establish
 IME, inset, lifecycle recreation, or TalkBack correctness. Remote
 `CI / Quality and Build` and required-check enforcement must be observed later,
 after separate commit/push/PR authorization.
+
+## Merchant Binding Foundation Verification (PNX-013)
+
+The client adds Android framework ownership rather than independent Kotlin rules.
+No artificial state helper, mocked Context tests, Robolectric, instrumentation
+runner, or dependency is introduced. Existing Merchant and contract JVM tests
+remain unchanged. Manual real-device integration is the task-specific choice;
+JVM regression and compilation cannot prove Binder lifecycle or authorization.
+
+Run fresh `:apps:merchant:test --rerun-tasks` and
+`:payment:contract:test --rerun-tasks`, inspect their XML reports separately, and
+record test methods, failures, errors, skips, and task execution/cache status.
+Run both app `assembleDebug` tasks, Merchant `lint`, repository `spotlessCheck`,
+`detekt`, `qualityCheck`, `build`, and `git diff --check`. Inspect Merchant debug
+and release runtime dependency reports for design-system, payment-domain, and
+payment-contract only as direct project dependencies, with no Service implementation,
+server, networking, persistence, or new DI dependency.
+
+Discover actual merged manifests and APK paths under each application's build
+outputs. Merchant must request, not declare, the bind permission and must not
+contain the Service implementation component or new Internet/foreground-service
+permission. Preserve the launcher and distinguish library/debug contributions.
+Payment Service must retain its exported component, sole signature permission
+ownership, and no intent filter. Compare actual APK signing identities locally;
+do not store signing keys, certificates, or fingerprints in the repository.
+
+Use `adb devices -l`, select a development device, install both app debug APKs,
+and inspect `pm path`, `dumpsys package`, and Service runtime state. Prefer debugger
+breakpoints to observe Activity start, one bind attempt, onServiceConnected, and
+the non-null generated interface. Background/foreground twice and verify cleanup
+and fresh binding without duplicate-bind or invalid-unbind crashes. Exercise
+recreation and rapid backgrounding while binding where practical. On a disposable
+environment, test Service absence, disconnected state, no retry, and usable amount
+entry, then restore the Service and verify binding again. Do not leave diagnostic
+logging or invoke the remote version method solely for this verification.
+
+PNX-014 retains compatibility negotiation, explicit Binder death monitoring,
+reconnect policy, richer failure state, and deeper lifecycle recovery. PNX-015
+retains asynchronous payment transport. No payment operation crosses Binder and
+Service-to-Server communication remains absent. Report unexecuted scenarios and
+never infer runtime binding from package installation or source inspection.
+
+### PNX-013 Local Verification Record
+
+Observed on 2026-09-27 using JDK 17 and Medium_Phone (`emulator-5554`, API 37,
+`sdk_gphone16k_arm64`), started with `-read-only -no-snapshot-save`:
+
+- Fresh Merchant `testDebugUnitTest`: 67 methods, zero failures/errors/skips;
+  fresh contract `testDebugUnitTest`: 4 methods, zero failures/errors/skips.
+  Each focused `--rerun-tasks` invocation executed its tasks, not cached tests.
+  No release unit-test execution is claimed.
+- Both debug assemblies, Merchant lint, Spotless, Detekt, qualityCheck, and full
+  build passed. The combined successful invocation had 40 executed and 371
+  up-to-date tasks. An initial Spotless layout failure in the new client was fixed
+  with the Merchant Kotlin formatter before rerunning the checks.
+- Debug/release runtime dependency reports contain the three intended project
+  dependencies and no Service implementation, server, network, persistence, or
+  new DI stack. Existing transitive Compose/Lifecycle coroutines are unchanged.
+- Both debug APK signatures verified with SDK build-tools 36.1.0 `apksigner`;
+  their signing certificate identities matched. No signing material is recorded.
+- Both APK installations succeeded. Package-manager metadata showed the Service's
+  signature permission and Merchant's requested/granted permission. Service dumps
+  showed the exact explicit component and applied permission in a separate process.
+- With Service absent, a JDK debugger attached through ADB/JDWP observed the false
+  bind result cleanup path, then `Disconnected` with null registration and proxy.
+  No automatic bind loop was observed. UI automation entered synthetic `12.34`
+  and confirmed `Amount ready: TRY 12.34` / `No payment has been started.`
+- After installing Service, debugger breakpoints observed `onServiceConnected`,
+  a non-null `IPaymentService.Stub.Proxy`, and `Connected`. Two subsequent
+  background/foreground cycles cleared registration/proxy on stop and acquired
+  distinct new connection/proxy objects on start. Service dumps showed no remaining
+  binding after cleanup and one registration while connected.
+- Debugger invocation of bind while connected retained the same registration;
+  repeated unbind after cleanup completed harmlessly. Rotation recreated the
+  Activity/client and acquired a fresh proxy. No crash appeared in the crash buffer.
+  No temporary application code, logging, or version-method invocation was used.
+
+Inspected merged manifests at
+`apps/{merchant,payment-service}/build/intermediates/merged_manifests/{debug,release}/process{Debug,Release}Manifest/AndroidManifest.xml`.
+Merchant requests but does not define the Service permission, has no Service
+component, and adds no Internet or foreground-service permission. Its launcher
+remains unchanged; PreviewActivity is debug-only and the AndroidX dynamic-receiver
+permission is a library contribution. Service retains its exported component,
+signature permission, and no intent filter.
+
+Unverified: permission denial with incompatible signing, dead/null-binding callback
+fault injection, stale-callback delivery, bind repetition while still Binding,
+rapid background during Binding, and process-death recovery. Automated Binder
+instrumentation remains absent. This verifies the exercised development path,
+not comprehensive permission enforcement or Binder resilience. Remote CI and
+repository settings were not changed or verified by this local work.

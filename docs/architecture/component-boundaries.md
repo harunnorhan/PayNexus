@@ -208,9 +208,9 @@ version query without side effects, file IO, network, database, or payment work.
 Remote calls still have IPC latency and must not block the client main thread.
 Future payment execution remains asynchronous under ADR-0002.
 
-PNX-012 establishes `:apps:payment-service -> :payment:contract` as the only
-application dependency on the contract. `com.paynexus.paymentservice.PaymentService`
-extends Android `Service`, owns one private immutable anonymous
+PNX-012 established `:apps:payment-service -> :payment:contract` as the only
+application dependency on the contract at that baseline.
+`com.paynexus.paymentservice.PaymentService` extends Android `Service`, owns one private immutable anonymous
 `IPaymentService.Stub`, and returns it from `onBind()`. The trivial version query
 can execute on Binder threads without mutable state or asynchronous work.
 
@@ -223,14 +223,30 @@ lifecycle overrides are needed. The application remains headless and bound-only,
 without UI, foreground-service behavior, domain operations, networking,
 persistence, DI, or direct coroutine infrastructure.
 
-Merchant remains unbound, has no contract dependency, and does not yet request
-the bind permission. Future dependency direction is
-`:apps:merchant -> :payment:contract <- :apps:payment-service`; future binding
-must target the Service explicitly. Cross-application Binder integration and
-permission-enforcement testing remain pending. PNX-013/PNX-014 own Merchant
-binding, connection state, unavailable
-service/version mismatch behavior, reconnect, and Binder death lifecycle
-(`DeathRecipient`, `linkToDeath`, and `unlinkToDeath`).
+PNX-013 adds `:apps:merchant -> :payment:contract <- :apps:payment-service`.
+Merchant requests the existing signature permission without redefining it.
+`com.paynexus.merchant.ipc.PaymentServiceClient` centralizes the explicit package
+`com.paynexus.paymentservice` and class `com.paynexus.paymentservice.PaymentService`.
+The Activity creates one client with application Context, binds in `onStart()`,
+and unbinds in `onStop()`. Compose and amount entry do not own the connection.
+
+The client privately owns `Disconnected`, `Binding`, and `Connected` state,
+a generated `IPaymentService` reference, and registration bookkeeping. Each
+attempt uses a distinct `ServiceConnection`; callbacks check reference identity.
+Repeated bind while binding/connected and unbind without a registration are no-ops.
+A false bind result or permission SecurityException triggers cleanup, including
+Android's required unbind after a false result. Only failed-attempt cleanup
+tolerates Android's specific "Service not registered:" IllegalArgumentException.
+Ordinary unbind errors are not swallowed. Disconnected/dead/null callbacks
+release registration without retry; later Activity start can bind again.
+
+`Connected` means proxy acquisition through `IPaymentService.Stub.asInterface`,
+not verified compatibility. Lifecycle calls and callbacks run on the main thread;
+no synchronous remote version call is made. There is no observable connection UI,
+DI, coroutine infrastructure, or Activity Context retention. PNX-014 owns version
+negotiation, unavailable-service state refinement, explicit Binder death handling
+(`DeathRecipient`, `linkToDeath`, `unlinkToDeath`), and reconnect/recovery hardening.
+See the testing strategy for actual runtime evidence and remaining limitations.
 
 PNX-015 owns asynchronous payment request/result transport and explicit mapping
 from framework-independent domain values. No parcelables or payment data cross
@@ -282,7 +298,7 @@ even identical text, clears confirmation. Configuration recreation retains state
 process recreation starts empty. No persistence or asynchronous work is introduced.
 
 Local confirmation is not payment initiation, authorization, or a payment result.
-No identifiers, payment lifecycle models, service binding, network, or persistence
-are introduced. Payment Service remains unconnected. Design System owns no amount
-entry, domain models, or window/inset behavior. The mandatory future payment path
-remains Merchant -> Payment Service -> Server.
+No identifiers, payment lifecycle models, network, or persistence are introduced
+by amount entry. Activity-owned Service binding does not initiate a payment.
+Design System owns no amount entry, domain models, or window/inset behavior.
+The mandatory payment path remains Merchant -> Payment Service -> Server.

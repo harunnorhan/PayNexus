@@ -119,17 +119,23 @@ The Android library enables AIDL locally and has no payment-domain dependency.
 private generated `IPaymentService.Stub` implementation. `getContractVersion()`
 returns `PaymentIpcContract.CURRENT_VERSION` without side effects.
 
-The Service is explicitly exported for future cross-application binding and
+The Service is explicitly exported for cross-application binding and
 protected by `com.paynexus.paymentservice.permission.BIND_PAYMENT_SERVICE`, a
 signature-level permission defined only by Payment Service. It has no intent
-filter; future clients must target the component explicitly and request the
-permission with a compatible signing identity. Compatibility is not authorization.
+filter; Merchant targets the component explicitly and requests the
+permission, requiring a compatible signing identity. Compatibility is not authorization.
 
 Payment Service remains headless, with no custom process, started/foreground
 service behavior, payment-domain dependency, networking, or persistence. Merchant
-remains unbound and does not consume the contract or request the permission yet.
-No payment request/result transport exists. Cross-application Binder integration
-and runtime permission-enforcement tests remain pending the client boundary.
+consumes the contract and requests the existing bind permission. Its internal
+`PaymentServiceClient` owns an explicit component, one connection per attempt,
+and a private generated AIDL proxy. `MainActivity.onStart()` binds and
+`onStop()` unbinds using application Context. Failed binds and disconnect callbacks
+release registration and clear the proxy; stale callbacks are ignored.
+Merchant makes no version query and implements no compatibility negotiation,
+automatic reconnect, or payment request/result transport. Real binding and lifecycle cleanup were observed
+on a local API 37 emulator; see the
+[PNX-013 verification record](docs/engineering/testing-strategy.md#pnx-013-local-verification-record).
 Domain models remain framework-independent. This uses ordinary Android Gradle
 Plugin AIDL, with repository-owned version metadata. See
 [Service shell verification](docs/engineering/testing-strategy.md#payment-service-shell-verification).
@@ -257,9 +263,10 @@ maximum is imposed. Zero parses numerically but cannot create a `PaymentAmount`.
 as a canonical `PaymentAmount`; parsed minor units are transient. Every edit event,
 including identical text, clears local confirmation. Confirming displays
 **Amount ready: TRY 12.34** and **No payment has been started.** State survives
-configuration recreation but starts empty after process recreation. Payment Service
-remains unconnected: there is no payment initiation, identifier generation,
-networking, Binder, or persistence.
+configuration recreation but starts empty after process recreation. Activity-owned
+Service binding is independent of amount entry: there is no
+payment initiation, identifier generation, networking, or persistence.
+Confirming an amount does not invoke Binder.
 
 Android conventions use compile SDK 37, minimum SDK 26, and Java 17. Install SDK
 Platform 37. Applications retain target SDK 36. Merchant directly declares stable

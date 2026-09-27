@@ -31,4 +31,9 @@ class MainActivity : ComponentActivity() {
         paymentServiceClient.unbind()
         super.onStop()
     }
+
+    override fun onDestroy() {
+        paymentServiceClient.close()
+        super.onDestroy()
+    }
 }

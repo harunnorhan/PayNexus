@@ -230,23 +230,53 @@ Merchant requests the existing signature permission without redefining it.
 The Activity creates one client with application Context, binds in `onStart()`,
 and unbinds in `onStop()`. Compose and amount entry do not own the connection.
 
-The client privately owns `Disconnected`, `Binding`, and `Connected` state,
-a generated `IPaymentService` reference, and registration bookkeeping. Each
-attempt uses a distinct `ServiceConnection`; callbacks check reference identity.
-Repeated bind while binding/connected and unbind without a registration are no-ops.
-A false bind result or permission SecurityException triggers cleanup, including
-Android's required unbind after a false result. Only failed-attempt cleanup
-tolerates Android's specific "Service not registered:" IllegalArgumentException.
-Ordinary unbind errors are not swallowed. Disconnected/dead/null callbacks
-release registration without retry; later Activity start can bind again.
+PNX-014 keeps `PaymentServiceClient` internal and introduces a Merchant-local,
+framework-independent `PaymentConnectionPolicy`. The policy owns lifecycle demand,
+opaque attempt/session identities, compatibility outcomes, and a single recovery
+allowance. The client owns Android registration, Binder/proxy references, death
+recipients, and worker resources. None of these Android objects are exposed to UI.
+There is no observable Compose connection state or connection UI.
 
-`Connected` means proxy acquisition through `IPaymentService.Stub.asInterface`,
-not verified compatibility. Lifecycle calls and callbacks run on the main thread;
-no synchronous remote version call is made. There is no observable connection UI,
-DI, coroutine infrastructure, or Activity Context retention. PNX-014 owns version
-negotiation, unavailable-service state refinement, explicit Binder death handling
-(`DeathRecipient`, `linkToDeath`, `unlinkToDeath`), and reconnect/recovery hardening.
-See the testing strategy for actual runtime evidence and remaining limitations.
+The internal states are `Disconnected`, `Binding`, `CheckingCompatibility`,
+`Ready`, `Unavailable(reason)`, and `Incompatible(remoteVersion)`. Acquiring a
+Binder is not readiness: the client links a death recipient, then submits exactly
+one `getContractVersion()` query for that attempt. `PaymentIpcContract.supports`
+remains the compatibility authority. Unsupported versions are retained as an
+explicit outcome after unbinding, with no downgrade or automatic retry.
+
+All policy and resource ownership mutations occur on the main thread. A private
+Java `ThreadPoolExecutor` has one worker and a queue bounded to one pending query;
+its only remote work is the synchronous version transaction. Results are posted
+to `Handler(Looper.getMainLooper())` with attempt identity. Binder death callbacks
+only mark atomic attempt invalidation/death flags and post to the main owner.
+Late results, old ServiceConnection callbacks, and stale recovery actions cannot
+replace a newer attempt/session. Repeated connection delivery cannot register a
+second death recipient or submit another handshake.
+
+Normal release invalidates the attempt, clears the proxy/Binder, cancels and
+removes queued query work, unlinks a successfully registered recipient, and
+unbinds the owned ServiceConnection. Confirmed death does not require unlinking
+the dead Binder. A death racing normal unlink may return false. Unexpected
+registration-ownership exceptions are not broadly swallowed. As in PNX-013,
+false bind results and binding SecurityException require cleanup; only rejected
+bind cleanup tolerates Android's specific "Service not registered:" exception.
+
+An uninterrupted started lifecycle interval permits one initial attempt and at
+most one automatic recovery attempt. `binderDied`, `onServiceDisconnected`,
+`onBindingDied`, already-dead Binder during linking, and `DeadObjectException`
+during the query share this loss path. Recovery consumes its allowance before
+posting a fresh bind and does not replenish it on `Ready`. There is no delay,
+backoff, polling, or third attempt. False bind results/missing Service, permission
+failures, null binding, incompatible versions, generic query failures, and worker
+rejection are terminal for that interval. A genuine stop/start permits retry.
+
+`onStop()` clears demand before cleanup and invalidates pending recovery/results.
+Repeated bind within the interval and repeated unbind are harmless. `onDestroy()`
+closes the client idempotently and shuts down the worker without waiting on main;
+recreation creates a new client. Only application Context is retained. Cancelling
+local work does not guarantee interruption of a synchronous Binder transaction.
+There is no handshake deadline; a hung call can occupy the worker and delay a
+later query. `Ready` does not guarantee future process liveness.
 
 PNX-015 owns asynchronous payment request/result transport and explicit mapping
 from framework-independent domain values. No parcelables or payment data cross

@@ -129,13 +129,30 @@ Payment Service remains headless, with no custom process, started/foreground
 service behavior, payment-domain dependency, networking, or persistence. Merchant
 consumes the contract and requests the existing bind permission. Its internal
 `PaymentServiceClient` owns an explicit component, one connection per attempt,
-and a private generated AIDL proxy. `MainActivity.onStart()` binds and
-`onStop()` unbinds using application Context. Failed binds and disconnect callbacks
-release registration and clear the proxy; stale callbacks are ignored.
-Merchant makes no version query and implements no compatibility negotiation,
-automatic reconnect, or payment request/result transport. Real binding and lifecycle cleanup were observed
-on a local API 37 emulator; see the
-[PNX-013 verification record](docs/engineering/testing-strategy.md#pnx-013-local-verification-record).
+and a private generated AIDL proxy. `MainActivity.onStart()` requests binding,
+`onStop()` releases it, and `onDestroy()` closes the client's worker resources.
+Binder acquisition enters `CheckingCompatibility`; a single worker performs the
+synchronous version query off main. Only `PaymentIpcContract.supports(version)`
+can establish `Ready`. Unsupported versions release the connection and remain
+`Incompatible`; unavailable/failed attempts retain an explicit failure reason.
+
+Each Binder has an attempt-owned death recipient. Death or connection loss clears
+the proxy and allows at most one automatic recovery bind per uninterrupted started
+interval. Reaching `Ready` does not replenish that allowance. Missing Service,
+permission denial, null binding, unsupported versions, and generic query failures
+never retry automatically. Stop invalidates queued recovery and late results;
+a later start creates a fresh session. Amount entry remains local and independent.
+There is no payment request/result transport or Service-to-Server communication.
+
+The worker uses standard Java concurrency with one thread and one pending-query
+slot; no dependency is added. Cancellation discards obsolete results but cannot
+guarantee termination of an in-flight Binder transaction. There is no handshake
+deadline, and a hung transaction can delay a subsequent query. `Ready` records
+confirmed compatibility and no observed death, not guaranteed future liveness.
+See the [PNX-014 verification section](docs/engineering/testing-strategy.md#binder-compatibility-and-recovery-verification-pnx-014)
+for test boundaries, runtime evidence, and remaining limitations. The
+[PNX-013 record](docs/engineering/testing-strategy.md#pnx-013-local-verification-record)
+preserves the earlier binding-foundation evidence.
 Domain models remain framework-independent. This uses ordinary Android Gradle
 Plugin AIDL, with repository-owned version metadata. See
 [Service shell verification](docs/engineering/testing-strategy.md#payment-service-shell-verification).

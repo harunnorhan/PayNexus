@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant amount entry, and V1 IPC contract foundation are implemented; runtime payment integration remains future work.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant amount entry, and V2 asynchronous payment IPC transport are implemented; device verification and server integration remain pending.
 
 ## Documentation
 
@@ -60,7 +60,7 @@ PayNexus/
 ### Runtime Components
 
 - `apps:merchant` — Merchant-facing Android application
-- `apps:payment-service` — Headless Android bound Service exposing the V1 contract-version query
+- `apps:payment-service` — Headless Android bound Service exposing V2 synthetic payment transport
 - `server:*` — Kotlin/JVM payment server foundation
 
 The mandatory runtime communication path is:
@@ -104,69 +104,60 @@ Run the deterministic JVM domain tests with:
 ./gradlew :payment:domain:test
 ```
 
-### IPC Contract Foundation
+### Asynchronous Payment IPC (PNX-015)
 
-`:payment:contract` owns the versioned AIDL/Binder contract in
-`com.paynexus.payment.contract`. V1 exposes only `IPaymentService.getContractVersion()`.
-`PaymentIpcContract.supports(remoteVersion)` accepts version 1 and rejects all
-other versions, including unknown future versions. Both current and minimum
-supported versions are 1. Compatibility negotiation is not authentication or
-authorization.
+`:payment:contract` owns the ordinary AGP AIDL interfaces, manual Parcelable
+request/result models, and version metadata. Both `CURRENT_VERSION` and
+`MIN_SUPPORTED_VERSION` are **2**. V1 peers and unknown future versions are
+rejected without fallback. Both applications must be upgraded together.
+The original synchronous `getContractVersion()` query retains its transaction
+position; the one-way `submitPayment(request, callback)` operation is appended.
+Results and request rejections return through a one-way per-request callback.
+Dispatch returning does not acknowledge processing or guarantee result delivery.
 
-The Android library enables AIDL locally and has no payment-domain dependency.
-`:apps:payment-service` now depends on the contract and contains
-`com.paynexus.paymentservice.PaymentService`, an Android bound Service owning a
-private generated `IPaymentService.Stub` implementation. `getContractVersion()`
-returns `PaymentIpcContract.CURRENT_VERSION` without side effects.
+Merchant's internal `PaymentServiceClient.submitPayment(id, key, amount)` accepts
+caller-owned domain values only after V2 readiness. Its `submissionState` exposes
+an Android-free local observation. At most one request is active; connection
+attempt plus local request identity and exact echoed identifiers prevent stale
+or duplicate callbacks from completing another request. Connection recovery never
+replays payments. Stop/close abandons local ownership and detaches callbacks.
+Transport failure, request rejection, malformed results, and abandonment do not
+manufacture a domain decline or processing failure.
 
-The Service is explicitly exported for cross-application binding and
-protected by `com.paynexus.paymentservice.permission.BIND_PAYMENT_SERVICE`, a
-signature-level permission defined only by Payment Service. It has no intent
-filter; Merchant targets the component explicitly and requests the
-permission, requiring a compatible signing identity. Compatibility is not authorization.
+Request fields preserve exact Payment ID, idempotency key, `Long` minor units,
+and canonical TRY currency. Each identifier is limited to 256 UTF-16 code units;
+invalid values are rejected without normalization or truncation. The contract
+has no domain dependency. Mapping belongs to each application; Payment Service
+now depends on the existing pure Kotlin payment domain for validation/outcomes.
+No domain type gains Android or Parcelable behavior.
 
-Payment Service remains headless, with no custom process, started/foreground
-service behavior, payment-domain dependency, networking, or persistence. Merchant
-consumes the contract and requests the existing bind permission. Its internal
-`PaymentServiceClient` owns an explicit component, one connection per attempt,
-and a private generated AIDL proxy. `MainActivity.onStart()` requests binding,
-`onStop()` releases it, and `onDestroy()` closes the client's worker resources.
-Binder acquisition enters `CheckingCompatibility`; a single worker performs the
-synchronous version query off main. Only `PaymentIpcContract.supports(version)`
-can establish `Ready`. Unsupported versions release the connection and remain
-`Incompatible`; unavailable/failed attempts retain an explicit failure reason.
+Payment Service performs a stateless synthetic demonstration: positive minor units
+modulo 3 select approved (`0`), declined/unspecified (`1`), or failed/processing
+error (`2`). For example, 300, 301, and 302 minor units exercise the three branches.
+These are not bank/acquirer operations. The Service makes one callback delivery
+attempt and retains no payment state. There is no networking, persistence,
+idempotency enforcement, retry framework, or Service-to-Server integration.
 
-Each Binder has an attempt-owned death recipient. Death or connection loss clears
-the proxy and allows at most one automatic recovery bind per uninterrupted started
-interval. Reaching `Ready` does not replenish that allowance. Missing Service,
-permission denial, null binding, unsupported versions, and generic query failures
-never retry automatically. Stop invalidates queued recovery and late results;
-a later start creates a fresh session. Amount entry remains local and independent.
-There is no payment request/result transport or Service-to-Server communication.
+The existing explicit component and Service-owned signature bind permission remain
+unchanged. Merchant requests that permission without defining it. Compatibility
+is not authorization. Activity start/stop/destroy still own bind/unbind/close.
+The bounded worker now dispatches both version queries and payment submissions
+on `paynexus-ipc`; main owns state and Binder callbacks post events to it.
+PNX-014's one connection recovery allowance per started interval is preserved.
 
-The worker uses standard Java concurrency with one thread and one pending-query
-slot; no dependency is added. Cancellation discards obsolete results but cannot
-guarantee termination of an in-flight Binder transaction. There is no handshake
-deadline, and a hung transaction can delay a subsequent query. `Ready` records
-confirmed compatibility and no observed death, not guaranteed future liveness.
-See the [PNX-014 verification section](docs/engineering/testing-strategy.md#binder-compatibility-and-recovery-verification-pnx-014)
-for test boundaries, runtime evidence, and remaining limitations. The
-[PNX-013 record](docs/engineering/testing-strategy.md#pnx-013-local-verification-record)
-preserves the earlier binding-foundation evidence.
-Domain models remain framework-independent. This uses ordinary Android Gradle
-Plugin AIDL, with repository-owned version metadata. See
-[Service shell verification](docs/engineering/testing-strategy.md#payment-service-shell-verification).
+Amount entry and local confirmation remain unchanged: confirming an amount never
+submits a payment. Human runtime verification uses the internal client through
+the debugger, without adding a payment UI or automatic submission.
+There is no handshake or payment callback deadline. A hung synchronous query can
+hold the worker; a silent live Service can leave a request pending until cleanup.
+Cancellation does not guarantee cancellation of remote work.
 
-```bash
-./gradlew :payment:contract:test
-./gradlew :payment:contract:assembleDebug
-./gradlew :payment:contract:lint
-```
-
-JVM policy tests and generated API/artifact inspection verify this foundation;
-Binder runtime instrumentation remains pending. See
-[IPC verification](docs/engineering/testing-strategy.md#ipc-contract-foundation-verification)
-and [contract boundaries](docs/architecture/component-boundaries.md#ipc-contract-foundation).
+See [PNX-015 verification](docs/engineering/testing-strategy.md#asynchronous-payment-transport-verification-pnx-015)
+for local test/build evidence and the separate human runtime checklist.
+**PNX-015 runtime/device verification is pending and was not performed by Codex.**
+Historical [PNX-013](docs/engineering/testing-strategy.md#pnx-013-local-verification-record)
+and [PNX-014](docs/engineering/testing-strategy.md#pnx-014-local-verification-record)
+runtime records do not verify V2 payment transport. Remote CI is also separate.
 
 ## Build Logic
 

@@ -6,22 +6,22 @@ import kotlin.test.assertTrue
 
 class PaymentIpcContractTest {
     @Test
-    fun `current version is supported`() {
-        assertTrue(PaymentIpcContract.supports(1))
+    fun `current version supports payment transport`() {
+        assertTrue(PaymentIpcContract.supports(2))
     }
 
     @Test
-    fun `version below minimum is rejected`() {
-        assertFalse(PaymentIpcContract.supports(0))
+    fun `old versions cannot establish payment readiness`() {
+        for (version in listOf(0, 1)) assertFalse(PaymentIpcContract.supports(version))
     }
 
     @Test
-    fun `unknown future version is rejected`() {
-        assertFalse(PaymentIpcContract.supports(2))
+    fun `unknown future versions are rejected`() {
+        for (version in listOf(3, Int.MAX_VALUE)) assertFalse(PaymentIpcContract.supports(version))
     }
 
     @Test
-    fun `negative version is rejected`() {
-        assertFalse(PaymentIpcContract.supports(-1))
+    fun `negative versions are rejected`() {
+        for (version in listOf(-1, Int.MIN_VALUE)) assertFalse(PaymentIpcContract.supports(version))
     }
 }

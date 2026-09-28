@@ -188,6 +188,9 @@ networking, Android dependencies, retries, or runtime communication changes.
 
 ## IPC Contract Foundation
 
+The following foundation describes PNX-011 through PNX-014. The V2 additions
+and current compatibility range are specified in the PNX-015 section below.
+
 `:payment:contract` is an Android library owning the versioned AIDL/Binder contract
 in `com.paynexus.payment.contract`. It owns AIDL definitions, generated Binder
 APIs, and repository-owned compatibility metadata only. AIDL is enabled locally
@@ -278,16 +281,75 @@ local work does not guarantee interruption of a synchronous Binder transaction.
 There is no handshake deadline; a hung call can occupy the worker and delay a
 later query. `Ready` does not guarantee future process liveness.
 
-PNX-015 owns asynchronous payment request/result transport and explicit mapping
-from framework-independent domain values. No parcelables or payment data cross
-Binder yet. Deferring transport avoids premature decisions about request
-correlation, PaymentId/IdempotencyKey ownership, callback lifecycle, result
-taxonomy, timeouts, uncertain outcomes, and backward-compatible parcelable
-evolution. Domain models remain unchanged and have no Android/Binder coupling.
+## Asynchronous Payment Transport (PNX-015)
 
-This uses ordinary Android application/library AIDL through AGP. No platform/HAL
-build or frozen-interface tooling is introduced. ADR-0002 remains the governing
-decision; the required path remains Merchant -> Payment Service -> Payment Server.
+The required runtime direction remains Merchant -> Payment Service -> Payment
+Server. This task implements only the first boundary. ADR-0002 remains unchanged;
+ordinary AGP AIDL is used, with no Stable AIDL/frozen-interface framework.
+
+The contract owns `PaymentRequestParcel`, `PaymentResultParcel`, their AIDL
+parcelable declarations, generated interfaces, and explicit integer wire values.
+It has no domain or application dependency. Both apps map at their own boundary;
+Payment Service adds a dependency on `:payment:domain`, which remains pure Kotlin.
+Neither app depends on the other application's implementation.
+
+V2 preserves the original query descriptor and transaction offset 0, then appends
+one-way `submitPayment`. The callback exposes one-way `onResult` and `onRejected`.
+Both version constants are 2. V1 Merchant rejects V2 Service, and V2 Merchant
+rejects V1 Service. V2 accepts only V2; future versions require explicit review.
+Readiness after the existing off-main handshake is the payment method gate.
+There is no downgrade, registered default fallback, or client-version authentication.
+
+Requests carry exact caller Payment ID, idempotency key, Long minor units, and
+canonical currency. Identifiers are nonblank and at most 256 UTF-16 code units;
+rejection never trims, replaces, normalizes, or truncates. Domain constructors
+validate positive `PaymentAmount` and canonical TRY. The IPC size limit does not
+change domain identifier semantics. Result fields echo both identifiers and carry
+explicit outcome/reason pairs: approved `(1, 0)`, declined/unspecified `(2, 1)`,
+failed/processing error `(3, 2)`. Enum ordinals are never serialized. Missing,
+unknown, contradictory, or mismatched values cannot become valid domain outcomes.
+Request rejection code 1 means invalid request, separately from processing failure.
+Manual readers check each string prefix and padded UTF-16 payload size, then verify
+decoded length/position. Primitive reads require their full byte width. Truncated
+fields throw a fixed-message BadParcelableException before a default integer can
+be accepted. Explicit null strings remain invalid inputs for application mapping.
+These checks preserve the existing field order and writeString/readString format;
+they do not add a new wire envelope or domain rule.
+
+Merchant's `PaymentRequestPolicy` owns one active request token and local state.
+`PaymentServiceClient` owns the generated callback and dispatch resources; the
+same bounded worker dispatches version queries and payment submission off main.
+The callback captures request and connection identities, consumes only its first
+terminal event, and posts to main for ownership and payload validation. The active
+request exists before dispatch, so an immediate callback is safe. Exact returned
+identifiers must match, but identifiers alone never establish callback ownership.
+A later submission may reuse the same strings without accepting an old callback.
+The callback's receiver is detached during cleanup even if a peer retains its Binder.
+
+A second active request is rejected without queuing. Not-ready or incompatible
+connections cannot submit. Worker rejection is a local pre-dispatch transport
+failure; generic dispatch failure may have uncertain delivery. Binder death or
+loss terminates local waiting without manufacturing a domain result. PNX-014's
+bounded connection recovery is unchanged and never replays payments. Stop/close
+abandons pending ownership before connection cleanup; late events cannot affect
+new requests. No timeout or durable idempotency is provided. A silent live peer can
+leave one request pending until cleanup; remote execution cannot be cancelled by
+local abandonment. A parcel decoding failure before callback dispatch can also
+prevent delivery and is not a confirmed payment failure.
+
+The Service validates/maps the request, computes positive minor units modulo 3,
+and returns approved for 0, declined/unspecified for 1, failed/processing error
+for 2. This is only deterministic synthetic transport behavior. Stateless bounded
+validation/arithmetic execute on the Binder dispatch thread, with one callback
+attempt and no callback registry, executor, persistence, or retained payment job.
+Missing callbacks cannot receive rejection; invalid requests with a usable callback
+receive rejection. Callback RemoteException ends delivery without retry.
+
+The signature permission and explicit component remain unchanged. No payment
+payload logging, network permissions, HTTP client, server processing, UI payment
+trigger, domain framework dependency, or production-security claim is introduced.
+Amount confirmation remains local. Deterministic JVM tests verify owned logic;
+real Binder marshalling/lifecycle/permission behavior remains manual and pending.
 
 ## Design System Foundation
 

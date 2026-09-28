@@ -26,7 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /** Activity-owned connection and payment resources; remote dispatch stays off main. */
-internal class PaymentServiceClient(context: Context) {
+internal class PaymentServiceClient(
+    context: Context,
+    onSubmissionTerminal: (PaymentSubmissionState) -> Unit = {},
+) {
     private val applicationContext = context.applicationContext
     private val component = ComponentName(
         "com.paynexus.paymentservice",
@@ -42,7 +45,7 @@ internal class PaymentServiceClient(context: Context) {
         ArrayBlockingQueue(1),
         { task -> Thread(task, "paynexus-ipc") },
     )
-    private val payments = PaymentRequests(PaymentRequestPolicy(policy), worker, main)
+    private val payments = PaymentRequests(PaymentRequestPolicy(policy), worker, main, onSubmissionTerminal)
     val submissionState: PaymentSubmissionState
         get() = payments.state
 
@@ -260,6 +263,7 @@ private class PaymentRequests(
     private val policy: PaymentRequestPolicy,
     private val worker: ThreadPoolExecutor,
     private val main: Handler,
+    private val onSubmissionTerminal: (PaymentSubmissionState) -> Unit,
 ) {
     val state: PaymentSubmissionState
         get() = policy.state
@@ -286,10 +290,12 @@ private class PaymentRequests(
                         when (result) {
                             is CallbackResult.Result -> {
                                 val mapped = PaymentTransportMapper.result(result.parcel)
-                                policy.result(token, mapped)
+                                if (policy.result(token, mapped)) publishTerminal()
                             }
 
-                            is CallbackResult.Rejected -> policy.fail(token, result.failure)
+                            is CallbackResult.Rejected -> {
+                                if (policy.fail(token, result.failure)) publishTerminal()
+                            }
                         }
                         clear(resources)
                     }
@@ -302,13 +308,13 @@ private class PaymentRequests(
 
     fun connectionLost() {
         active?.let {
-            policy.fail(it.token, PaymentTransportFailure.ConnectionLost)
+            if (policy.fail(it.token, PaymentTransportFailure.ConnectionLost)) publishTerminal()
             clear(it)
         }
     }
 
     fun abandon() {
-        policy.abandon()
+        if (policy.abandon()) publishTerminal()
         active?.let(::clear)
     }
 
@@ -327,7 +333,10 @@ private class PaymentRequests(
                 if (failure != null) {
                     main.post {
                         if (failure == PaymentTransportFailure.ConnectionLost) onDead()
-                        if (policy.fail(resources.token, failure)) clear(resources)
+                        if (policy.fail(resources.token, failure)) {
+                            publishTerminal()
+                            clear(resources)
+                        }
                     }
                 }
             }
@@ -336,9 +345,13 @@ private class PaymentRequests(
         try {
             worker.execute(task)
         } catch (_: RejectedExecutionException) {
-            policy.fail(resources.token, PaymentTransportFailure.WorkerUnavailable)
+            if (policy.fail(resources.token, PaymentTransportFailure.WorkerUnavailable)) publishTerminal()
             clear(resources)
         }
+    }
+
+    private fun publishTerminal() {
+        onSubmissionTerminal(policy.state)
     }
 
     private fun clear(resources: Resources) {

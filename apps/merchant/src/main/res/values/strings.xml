@@ -11,6 +11,26 @@
     <string name="amount_entry_error_overflow">Amount is too large.</string>
     <string name="amount_entry_confirm">Confirm amount</string>
     <string name="amount_entry_ready">Amount ready: %1$s</string>
-    <string name="amount_entry_no_payment">No payment has been started.</string>
     <string name="amount_entry_formatted_try">TRY %1$s</string>
+    <string name="payment_confirmation_demo">Ready to send to the synthetic Payment Service.</string>
+    <string name="payment_start">Start payment</string>
+    <string name="payment_start_not_ready">Payment Service is not ready. Check the Service and try again.</string>
+    <string name="payment_start_already_active">Another local payment request is already active.</string>
+    <string name="payment_start_invalid">The payment request could not be created. Start a new payment.</string>
+    <string name="payment_processing_title">Processing payment</string>
+    <string name="payment_processing_detail">Waiting for the synthetic Payment Service result.</string>
+    <string name="payment_approved_title">Payment approved</string>
+    <string name="payment_approved_detail">Synthetic demonstration result: approved.</string>
+    <string name="payment_declined_title">Payment declined</string>
+    <string name="payment_declined_detail">Synthetic demonstration result: declined for an unspecified reason.</string>
+    <string name="payment_failed_title">Payment failed</string>
+    <string name="payment_failed_detail">Synthetic demonstration result: processing error.</string>
+    <string name="payment_transport_failure_title">Payment result unavailable</string>
+    <string name="payment_transport_connection_lost">The Service connection was lost. The payment outcome is unknown and was not retried.</string>
+    <string name="payment_transport_dispatch_failed">The request could not be delivered reliably. The payment outcome is unknown and was not retried.</string>
+    <string name="payment_transport_protocol_failure">The Service returned an invalid result. No payment outcome was created.</string>
+    <string name="payment_transport_rejected">The Service rejected the request. No payment outcome was created.</string>
+    <string name="payment_transport_service_unavailable">The Payment Service became unavailable. No payment outcome was created.</string>
+    <string name="payment_transport_abandoned">Local result waiting stopped when the screen left the foreground. The payment outcome is unknown and was not retried.</string>
+    <string name="payment_new">New payment</string>
 </resources>

@@ -850,3 +850,115 @@ verification was executed. JVM tests and artifact inspection do not prove real
 cross-process delivery, marshalling, lifecycle races, or permission enforcement.
 No commit, push, PR, GitHub settings, or protection-rule changes were made; remote
 CI success is not claimed. Server integration remains deferred.
+
+## Merchant Payment Flow Verification (PNX-016)
+
+PNX-016 extends the existing Merchant JVM layer without introducing mocking,
+coroutine-test, Compose instrumentation, navigation-test, or device-test
+infrastructure. `AmountEntryViewModelTest` preserves PNX-010 parsing, formatting,
+confirmation, immutable snapshot, and Long-boundary coverage. Its payment-flow
+tests inject deterministic identifier pairs and a lightweight submission function;
+they do not mock Android framework or Binder calls.
+
+The flow tests cover local confirmation without submission, exact confirmed amount
+and identifier submission, accepted Processing admission, not-ready/already-active/
+invalid local rejection, duplicate action suppression, all three domain outcomes,
+transport/protocol separation, lifecycle abandonment, exact identifier matching,
+stale and duplicate terminal observations, reset, and fresh identifiers for the
+next explicit attempt. Existing request-policy tests retain PNX-015 token,
+connection-attempt, mismatch, duplicate callback, cleanup, and no-replay coverage;
+their terminal transport observations now also assert exact request identifiers.
+
+These tests establish repository-owned orchestration only. They do not establish
+real cross-process marshalling, Activity lifecycle ordering, permission enforcement,
+visual correctness, callback delivery, or process-death behavior. Activity stop
+abandons local request ownership; remote cancellation is not claimed. A silent
+live Service can leave Processing active until lifecycle cleanup because there is
+no callback deadline. Process death starts a fresh flow because no persistence is
+introduced.
+
+### Local Non-Device Commands
+
+Use JDK 17 and SDK Platform 37 from the repository root:
+
+```bash
+./gradlew :payment:domain:test --rerun-tasks
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew :apps:merchant:test --rerun-tasks
+./gradlew :apps:payment-service:test --rerun-tasks
+./gradlew :payment:contract:assembleDebug
+./gradlew :apps:merchant:assembleDebug
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :payment:contract:lint
+./gradlew :apps:merchant:lint
+./gradlew :apps:payment-service:lint
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :payment:contract:dependencies --configuration debugRuntimeClasspath
+./gradlew :payment:contract:dependencies --configuration releaseRuntimeClasspath
+./gradlew :apps:merchant:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:merchant:dependencies --configuration releaseRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+git status --short
+git diff
+```
+
+Inspect XML/HTML test reports for actual methods, failures, errors, and skips, and
+record executed/cached/up-to-date task state. Assembly and artifact inspection must
+confirm the unchanged V2 generated transaction layout, one-way submission/callback
+flags, packaged contract classes, exact signature permission boundary, explicit
+Service, absence of Internet permission, and absence of opposite-application code.
+Dependency reports must retain the existing project direction and contain no new
+network, persistence, DI, coroutine, navigation, retry, or test framework.
+
+### PNX-016 Local Verification Record
+
+On 2026-09-28, Codex completed the approved non-device verification scope on
+`feature/PNX-016-merchant-payment-flow`:
+
+- fresh JVM runs passed for payment domain (26 tests), payment contract (10),
+  Merchant (116), and Payment Service (9), with zero failures, errors, or skips;
+- contract, Merchant, and Payment Service debug assembly and lint tasks passed;
+- `spotlessCheck`, `detekt`, `qualityCheck`, and the repository `build` passed;
+- all six debug/release runtime dependency reports completed without a new direct
+  dependency or a new network, persistence, DI, retry, navigation, or test stack;
+- generated AIDL retained transaction slots 0/1 and one-way submission/result/
+  rejection calls; debug/release merged manifests retained the explicit
+  signature-permission boundary and contained no Internet permission;
+- the contract AAR and both debug APKs contained the shared V2 contract classes,
+  while neither APK contained the other application's implementation class; and
+- final source/diff inspection found no payment payload logging, secrets,
+  credentials, floating-point money, production data, direct Merchant-to-Server
+  path, or changes to manifests, Gradle dependencies, AIDL, payment domain, or
+  Payment Service production code.
+
+These results are local evidence only. They do not establish device/runtime IPC,
+visual behavior, lifecycle race behavior, process death, or permission enforcement.
+No commit, push, pull request, GitHub setting, or remote CI state was created or
+changed.
+
+### Manual Runtime Checklist — Harun + ChatGPT Only
+
+Codex must not run adb, an emulator/device, installation tasks, Android Studio
+debugging, or runtime Binder scenarios for PNX-016. Runtime verification remains
+pending for Harun + ChatGPT:
+
+1. Establish V2 readiness with matching Merchant and Payment Service builds.
+2. Exercise TRY 3.00 -> Confirmation -> Processing -> Approved.
+3. Select New payment, then exercise TRY 3.01 -> Processing -> Declined.
+4. Select New payment, then exercise TRY 3.02 -> Processing -> Failed.
+5. Verify repeated Start payment actions cannot submit a second active request.
+6. Exercise Service-unavailable and connection-loss behavior without crash,
+   fabricated outcome, or automatic replay.
+7. Restore Service connectivity and verify only a new explicit payment submits.
+8. Where practical, verify an old result cannot mutate a later flow.
+9. Verify amount entry works after New payment and across applicable recreation.
+10. Inspect logs for absence of payment payload and identifier logging.
+
+Record device/API, app versions, scenario ordering, and unavailable cases. Synthetic
+outcomes are not bank/acquirer authorization. Service-to-Server integration,
+persistence, remote CI, and production security remain separate future work.

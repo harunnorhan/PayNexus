@@ -394,3 +394,56 @@ No identifiers, payment lifecycle models, network, or persistence are introduced
 by amount entry. Activity-owned Service binding does not initiate a payment.
 Design System owns no amount entry, domain models, or window/inset behavior.
 The mandatory payment path remains Merchant -> Payment Service -> Server.
+
+## Merchant Payment Flow (PNX-016)
+
+PNX-016 connects the existing local confirmation to the existing V2 transport
+without changing the AIDL contract, Payment Service behavior, or component
+dependency direction. The runtime path remains Merchant -> Payment Service;
+Service-to-Server communication remains deferred.
+
+`AmountEntryViewModel` now owns the Merchant application flow: editing, local
+confirmation, processing, terminal domain result, terminal transport uncertainty,
+and new-payment reset. It owns the canonical confirmed `PaymentAmount` and the
+exact caller-generated `PaymentId`/`IdempotencyKey` pair for the displayed attempt.
+Its state contains domain and Merchant presentation values only. It never retains
+Context, `PaymentServiceClient`, Binder objects, generated AIDL interfaces, or
+Parcelable transport models.
+
+The Activity still owns one `PaymentServiceClient`. It binds on start, unbinds on
+stop, and closes on destroy. The Activity passes a narrow submission function to
+the ViewModel and forwards identifier-bearing terminal transport observations.
+Connection readiness remains private to `PaymentConnectionPolicy`; it is not a
+payment-flow state. `PaymentRequestPolicy` remains the authority for active request
+tokens, connection-attempt identity, duplicate callback consumption, exact echoed
+identifier validation, transport mapping, and callback cleanup.
+
+Local confirmation never submits. A separate cashier action creates one fresh
+UUID-backed Payment ID and idempotency key and asks the existing client to submit
+the already-confirmed amount. Only `Accepted` admission enters Processing. Local
+not-ready, already-active, or invalid-request admission remains at Confirmation
+with a non-business error. No admission or transport error creates a
+`PaymentOutcome`.
+
+The ViewModel accepts a terminal observation only while Processing and only when
+both exact identifiers match its owned attempt. It retains the accepted pair
+through terminal display. New payment clears the amount, identifiers, result, and
+presentation ownership but never submits or changes connection ownership. IPC
+token identity remains stronger than identifier equality: an old token cannot
+complete a later request even if strings are reused, and the UI guard prevents an
+old Activity/client observation from changing a later flow.
+
+Connection loss ends local waiting and may trigger the unchanged PNX-014 bounded
+connection recovery. Recovery restores connectivity only and never submits a
+payment. Activity stop abandons and detaches a pending callback; Merchant reports
+an unknown local result without claiming remote cancellation. Configuration
+recreation retains ViewModel state, but an abandoned client request is not resumed.
+Process death starts a fresh flow. No timeout, cancellation protocol, persistence,
+durable retry, or durable idempotency enforcement is introduced.
+
+The Payment Service remains the existing stateless synthetic processor. Positive
+minor units modulo three produce approved, declined/unspecified, or
+failed/processing-error outcomes. These results demonstrate transport only and are
+not bank or acquirer authorization. The signature bind permission, explicit
+component, absence of Merchant Internet permission, and absence of payload logging
+remain unchanged.

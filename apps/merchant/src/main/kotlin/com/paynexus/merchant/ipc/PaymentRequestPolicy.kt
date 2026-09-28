@@ -40,7 +40,7 @@ internal class PaymentRequestPolicy(private val connection: PaymentConnectionPol
         state = if (valid) {
             PaymentSubmissionState.Completed(token.id, token.key, requireNotNull(result).outcome)
         } else {
-            PaymentSubmissionState.TransportFailed(PaymentTransportFailure.InvalidResult)
+            PaymentSubmissionState.TransportFailed(token.id, token.key, PaymentTransportFailure.InvalidResult)
         }
         active = null
         return true
@@ -49,14 +49,14 @@ internal class PaymentRequestPolicy(private val connection: PaymentConnectionPol
     fun fail(token: Token, reason: PaymentTransportFailure): Boolean {
         if (active !== token) return false
         active = null
-        state = PaymentSubmissionState.TransportFailed(reason)
+        state = PaymentSubmissionState.TransportFailed(token.id, token.key, reason)
         return true
     }
 
-    fun abandon() {
-        if (active != null) {
-            active = null
-            state = PaymentSubmissionState.Abandoned
-        }
+    fun abandon(): Boolean {
+        val token = active ?: return false
+        active = null
+        state = PaymentSubmissionState.Abandoned(token.id, token.key)
+        return true
     }
 }

@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant amount entry, and V2 asynchronous payment IPC transport are implemented; device verification and server integration remain pending.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, and V2 asynchronous payment IPC transport are implemented; PNX-016 device verification and server integration remain pending.
 
 ## Documentation
 
@@ -146,8 +146,8 @@ on `paynexus-ipc`; main owns state and Binder callbacks post events to it.
 PNX-014's one connection recovery allowance per started interval is preserved.
 
 Amount entry and local confirmation remain unchanged: confirming an amount never
-submits a payment. Human runtime verification uses the internal client through
-the debugger, without adding a payment UI or automatic submission.
+submits a payment. At the PNX-015 baseline, human runtime verification used the
+internal client through the debugger without a payment UI or automatic submission.
 There is no handshake or payment callback deadline. A hung synchronous query can
 hold the worker; a silent live Service can leave a request pending until cleanup.
 Cancellation does not guarantee cancellation of remote work.
@@ -158,6 +158,46 @@ for local test/build evidence and the separate human runtime checklist.
 Historical [PNX-013](docs/engineering/testing-strategy.md#pnx-013-local-verification-record)
 and [PNX-014](docs/engineering/testing-strategy.md#pnx-014-local-verification-record)
 runtime records do not verify V2 payment transport. Remote CI is also separate.
+
+### Merchant Payment Flow (PNX-016)
+
+Merchant now connects its confirmed canonical `PaymentAmount` to the existing V2
+client through a second, explicit cashier action. The single state-driven screen
+represents editing, confirmation, processing, approved, declined, failed, and
+transport/protocol-failure states. Confirming remains entirely local; only
+**Start payment** creates and submits a request. **New payment** clears the previous
+amount, identifiers, result, and local flow ownership without submitting anything.
+
+`AmountEntryViewModel` owns the confirmed amount, caller-generated identifiers,
+processing state, terminal domain outcome, and reset behavior. It does not retain
+the Android client, Binder objects, AIDL interfaces, Parcelables, or Context.
+`PaymentServiceClient` remains Activity-owned and independently owns connection
+readiness, request tokens, Binder callbacks, and dispatch resources. Production
+identifiers use two exact UUID strings per explicit attempt; deterministic tests
+inject fixed values. The accepted identifier pair is retained through processing
+and terminal display. Terminal observations must match that pair and the current
+processing phase before they can change UI state.
+
+PNX-015 token/connection correlation remains authoritative. Duplicate callbacks,
+old request tokens, mismatched identifiers, and callbacks detached during cleanup
+cannot complete a later request. PNX-014 recovery may restore V2 connectivity but
+never replays a payment. Local not-ready admission stays at confirmation. Transport
+loss, malformed results, request rejection, or lifecycle abandonment are displayed
+as non-business failures and never become a decline or processing-error outcome.
+
+Activity stop abandons local callback ownership. If it occurs during processing,
+Merchant reports an unknown/abandoned local result and does not claim remote
+cancellation. Ordinary configuration recreation retains the ViewModel state, but
+the stopped client cannot continue waiting for its abandoned request. Process death
+starts a fresh flow. There is no persistence, timeout, cancellation protocol,
+durable retry, or durable idempotency enforcement.
+
+The Payment Service remains a stateless synthetic demonstration: positive minor
+units modulo three produce approved, declined/unspecified, or failed/processing
+error. No bank/acquirer authorization occurs. Service-to-Server HTTP integration,
+networking, and persistence remain deferred. See the
+[PNX-016 verification strategy](docs/engineering/testing-strategy.md#merchant-payment-flow-verification-pnx-016).
+Runtime/device verification is pending and reserved for Harun + ChatGPT.
 
 ## Build Logic
 
@@ -249,14 +289,14 @@ Use the Gradle Wrapper:
 
 A globally installed Gradle distribution is not required.
 
-## Merchant Amount Entry
+## Merchant Cashier Flow
 
 Merchant launches through
 `MainActivity -> PayNexusTheme -> MerchantApp -> AmountEntryRoute -> AmountEntryScreen`.
 The feature belongs to `com.paynexus.merchant.feature.amountentry` inside
 `:apps:merchant`; no extra feature module is needed. Merchant explicitly depends
 on `:payment:domain` to construct `PaymentAmount(Money(minorUnits, CurrencyCode.TRY))`.
-Design System remains independent and supplies theme, spacing, and the confirmation button.
+Design System remains independent and supplies theme, spacing, and action buttons.
 
 Input uses ASCII digits and either a dot or comma as a decimal separator, with
 at most two fractional digits. Leading separators and leading zeros are accepted.
@@ -269,28 +309,30 @@ maximum is imposed. Zero parses numerically but cannot create a `PaymentAmount`.
 
 `AmountEntryViewModel` owns synchronous Compose state. The candidate is stored only
 as a canonical `PaymentAmount`; parsed minor units are transient. Every edit event,
-including identical text, clears local confirmation. Confirming displays
-**Amount ready: TRY 12.34** and **No payment has been started.** State survives
-configuration recreation but starts empty after process recreation. Activity-owned
-Service binding is independent of amount entry: there is no
-payment initiation, identifier generation, networking, or persistence.
-Confirming an amount does not invoke Binder.
+including identical text, clears local confirmation. Confirming displays the exact
+canonical amount but does not invoke Binder. A separate **Start payment** action
+generates caller-owned IDs and delegates to the Activity-owned client. Accepted
+submissions enter Processing; validated results remain distinct from local
+transport/protocol failure. **New payment** returns to empty amount entry.
+
+State survives ordinary configuration recreation but starts empty after process
+recreation. Leaving the foreground during Processing abandons local callback
+ownership and reports transport uncertainty without replay. There is no networking,
+persistence, durable retry, or automatic payment replay in Merchant.
 
 Android conventions use compile SDK 37, minimum SDK 26, and Java 17. Install SDK
 Platform 37. Applications retain target SDK 36. Merchant directly declares stable
 Lifecycle ViewModel and ViewModel Compose 2.11.0. There is no feature StateFlow,
 coroutine scheduling, or direct coroutine dependency.
 
-Build, test, and install on a connected local emulator/device:
+Build and test locally with:
 
 ```bash
 ./gradlew :apps:merchant:test
 ./gradlew :apps:merchant:assembleDebug
-./gradlew :apps:merchant:installDebug
 ```
 
-Open **PayNexus Merchant** from the launcher. Follow the
-[Merchant verification checklist](docs/engineering/testing-strategy.md#merchant-amount-entry-verification).
-Parser, formatter, and ViewModel behavior have JVM tests. PNX-010 intentionally
-adds no Compose instrumentation infrastructure; platform interaction still needs
-local runtime verification. Compilation does not establish visual correctness.
+Parser, formatter, ViewModel flow, identifier ownership, and stale-event behavior
+have JVM tests. Follow the PNX-016 manual checklist only during the separate
+Harun + ChatGPT runtime pass. Compilation does not establish visual or runtime
+Binder correctness.

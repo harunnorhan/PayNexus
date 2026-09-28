@@ -13,8 +13,13 @@ internal sealed interface PaymentSubmissionState {
         val idempotencyKey: IdempotencyKey,
         val outcome: PaymentOutcome,
     ) : PaymentSubmissionState
-    data class TransportFailed(val reason: PaymentTransportFailure) : PaymentSubmissionState
-    data object Abandoned : PaymentSubmissionState
+    data class TransportFailed(
+        val paymentId: PaymentId,
+        val idempotencyKey: IdempotencyKey,
+        val reason: PaymentTransportFailure,
+    ) : PaymentSubmissionState
+
+    data class Abandoned(val paymentId: PaymentId, val idempotencyKey: IdempotencyKey) : PaymentSubmissionState
 }
 
 internal enum class PaymentTransportFailure {

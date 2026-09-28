@@ -86,7 +86,10 @@ class PaymentRequestPolicyTest {
         for (result in cases) {
             policy.begin(attempt, id, key)
             assertTrue(policy.result(assertNotNull(policy.active), result))
-            assertEquals(PaymentSubmissionState.TransportFailed(PaymentTransportFailure.InvalidResult), policy.state)
+            assertEquals(
+                PaymentSubmissionState.TransportFailed(id, key, PaymentTransportFailure.InvalidResult),
+                policy.state,
+            )
         }
     }
 
@@ -98,16 +101,16 @@ class PaymentRequestPolicyTest {
             val token = assertNotNull(policy.active)
             assertTrue(policy.fail(token, failure))
             assertFalse(policy.result(token, result()))
-            assertEquals(PaymentSubmissionState.TransportFailed(failure), policy.state)
+            assertEquals(PaymentSubmissionState.TransportFailed(id, key, failure), policy.state)
         }
     }
 
     @Test
     fun `stop abandons ownership and rejects callbacks after restart`() {
         val old = begin()
-        policy.abandon()
+        assertTrue(policy.abandon())
         connection.stop()
-        assertEquals(PaymentSubmissionState.Abandoned, policy.state)
+        assertEquals(PaymentSubmissionState.Abandoned(id, key), policy.state)
         assertFalse(policy.result(old, result()))
         val current = begin()
         assertFalse(policy.result(old, result()))
@@ -124,7 +127,10 @@ class PaymentRequestPolicyTest {
         connection.versionReceived(replacement, 2)
         assertNull(policy.active)
         assertFalse(policy.result(old, result()))
-        assertEquals(PaymentSubmissionState.TransportFailed(PaymentTransportFailure.ConnectionLost), policy.state)
+        assertEquals(
+            PaymentSubmissionState.TransportFailed(id, key, PaymentTransportFailure.ConnectionLost),
+            policy.state,
+        )
         assertNull(connection.lost(replacement))
     }
 
@@ -138,11 +144,11 @@ class PaymentRequestPolicyTest {
 
     @Test
     fun `repeated abandonment is harmless and does not replace completed outcomes`() {
-        policy.abandon()
+        assertFalse(policy.abandon())
         assertEquals(PaymentSubmissionState.Idle, policy.state)
         val token = begin()
         policy.result(token, result())
-        repeat(2) { policy.abandon() }
+        repeat(2) { assertFalse(policy.abandon()) }
         assertEquals(PaymentSubmissionState.Completed(id, key, PaymentOutcome.Approved), policy.state)
     }
 

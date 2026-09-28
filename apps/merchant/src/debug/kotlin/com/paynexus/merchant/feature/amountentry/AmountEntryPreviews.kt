@@ -5,8 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.paynexus.designsystem.theme.PayNexusTheme
 import com.paynexus.payment.domain.CurrencyCode
+import com.paynexus.payment.domain.DeclineReason
 import com.paynexus.payment.domain.Money
 import com.paynexus.payment.domain.PaymentAmount
+import com.paynexus.payment.domain.PaymentFailure
+import com.paynexus.payment.domain.PaymentOutcome
 
 @Preview(name = "Empty", widthDp = 360, heightDp = 640)
 @Composable
@@ -59,12 +62,63 @@ private fun AmountEntryOverflowPreview() {
 @Composable
 private fun AmountEntryConfirmedPreview() {
     val amount = PaymentAmount(Money(1234L, CurrencyCode.TRY))
-    AmountEntryPreview(AmountEntryUiState("12.34", amount, AmountEntryValidation.Valid, amount))
+    AmountEntryPreview(
+        AmountEntryUiState(
+            "12.34",
+            amount,
+            AmountEntryValidation.Valid,
+            MerchantPaymentUiState.Confirmation(amount),
+        ),
+    )
+}
+
+@Preview(name = "Processing", widthDp = 360, heightDp = 640)
+@Composable
+private fun PaymentProcessingPreview() {
+    val amount = PaymentAmount(Money(300L, CurrencyCode.TRY))
+    AmountEntryPreview(AmountEntryUiState(payment = MerchantPaymentUiState.Processing(amount)))
+}
+
+@Preview(name = "Approved", widthDp = 360, heightDp = 640)
+@Composable
+private fun PaymentApprovedPreview() {
+    val amount = PaymentAmount(Money(300L, CurrencyCode.TRY))
+    AmountEntryPreview(AmountEntryUiState(payment = MerchantPaymentUiState.Result(amount, PaymentOutcome.Approved)))
+}
+
+@Preview(name = "Declined", widthDp = 360, heightDp = 640)
+@Composable
+private fun PaymentDeclinedPreview() {
+    val amount = PaymentAmount(Money(301L, CurrencyCode.TRY))
+    val outcome = PaymentOutcome.Declined(DeclineReason.UNSPECIFIED)
+    AmountEntryPreview(AmountEntryUiState(payment = MerchantPaymentUiState.Result(amount, outcome)))
+}
+
+@Preview(name = "Failed", widthDp = 360, heightDp = 640)
+@Composable
+private fun PaymentFailedPreview() {
+    val amount = PaymentAmount(Money(302L, CurrencyCode.TRY))
+    val outcome = PaymentOutcome.Failed(PaymentFailure.PROCESSING_ERROR)
+    AmountEntryPreview(AmountEntryUiState(payment = MerchantPaymentUiState.Result(amount, outcome)))
+}
+
+@Preview(name = "TransportFailure", widthDp = 360, heightDp = 640)
+@Composable
+private fun PaymentTransportFailurePreview() {
+    val amount = PaymentAmount(Money(300L, CurrencyCode.TRY))
+    val state = MerchantPaymentUiState.TransportFailure(amount, MerchantTransportFailure.ConnectionLost)
+    AmountEntryPreview(AmountEntryUiState(payment = state))
 }
 
 @Composable
 private fun AmountEntryPreview(state: AmountEntryUiState) {
     PayNexusTheme {
-        AmountEntryScreen(state = state, onAmountChanged = {}, onConfirm = {})
+        AmountEntryScreen(
+            state = state,
+            onAmountChanged = {},
+            onConfirm = {},
+            onStartPayment = {},
+            onNewPayment = {},
+        )
     }
 }

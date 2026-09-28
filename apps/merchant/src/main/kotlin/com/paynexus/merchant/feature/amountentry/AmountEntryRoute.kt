@@ -1,13 +1,21 @@
 package com.paynexus.merchant.feature.amountentry
 
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.viewmodel.compose.viewModel
+import com.paynexus.merchant.ipc.PaymentSubmissionAdmission
+import com.paynexus.payment.domain.IdempotencyKey
+import com.paynexus.payment.domain.PaymentAmount
+import com.paynexus.payment.domain.PaymentId
 
 @Composable
-internal fun AmountEntryRoute(viewModel: AmountEntryViewModel = viewModel()) {
+internal fun AmountEntryRoute(
+    viewModel: AmountEntryViewModel,
+    submitPayment: (PaymentId, IdempotencyKey, PaymentAmount) -> PaymentSubmissionAdmission,
+) {
     AmountEntryScreen(
         state = viewModel.uiState,
         onAmountChanged = viewModel::onAmountChanged,
         onConfirm = viewModel::onConfirm,
+        onStartPayment = { viewModel.onStartPayment(submitPayment) },
+        onNewPayment = viewModel::onNewPayment,
     )
 }

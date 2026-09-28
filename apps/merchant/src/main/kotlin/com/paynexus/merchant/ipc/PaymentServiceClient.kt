@@ -10,15 +10,22 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
 import com.paynexus.merchant.ipc.PaymentConnectionPolicy.Failure
+import com.paynexus.payment.contract.IPaymentResultCallback
 import com.paynexus.payment.contract.IPaymentService
+import com.paynexus.payment.contract.PaymentRequestParcel
+import com.paynexus.payment.contract.PaymentResultParcel
+import com.paynexus.payment.domain.IdempotencyKey
+import com.paynexus.payment.domain.PaymentAmount
+import com.paynexus.payment.domain.PaymentId
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.FutureTask
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
-/** Activity-owned resources; only the version transaction runs on the worker. */
+/** Activity-owned connection and payment resources; remote dispatch stays off main. */
 internal class PaymentServiceClient(context: Context) {
     private val applicationContext = context.applicationContext
     private val component = ComponentName(
@@ -33,10 +40,28 @@ internal class PaymentServiceClient(context: Context) {
         0L,
         TimeUnit.MILLISECONDS,
         ArrayBlockingQueue(1),
-        { task -> Thread(task, "paynexus-contract-version") },
+        { task -> Thread(task, "paynexus-ipc") },
     )
+    private val payments = PaymentRequests(PaymentRequestPolicy(policy), worker, main)
+    val submissionState: PaymentSubmissionState
+        get() = payments.state
+
     private var active: ConnectionAttempt? = null
     private var closed = false
+
+    fun submitPayment(id: PaymentId, key: IdempotencyKey, amount: PaymentAmount): PaymentSubmissionAdmission {
+        checkMainThread()
+        val attempt = active?.takeUnless { closed || it.invalidated.get() }
+        val proxy = attempt?.service
+        return if (attempt == null || proxy == null) {
+            PaymentSubmissionAdmission.NotReady
+        } else {
+            payments.submit(attempt.identity, proxy, attempt.invalidated, id, key, amount) {
+                attempt.dead.set(true)
+                lost(attempt)
+            }
+        }
+    }
 
     fun bind() {
         checkMainThread()
@@ -46,6 +71,7 @@ internal class PaymentServiceClient(context: Context) {
 
     fun unbind() {
         checkMainThread()
+        payments.abandon()
         policy.stop()
         main.removeCallbacksAndMessages(null)
         active?.let(::release)
@@ -75,7 +101,7 @@ internal class PaymentServiceClient(context: Context) {
     }
 
     private fun connected(attempt: ConnectionAttempt, binder: IBinder) {
-        if (!isCurrent(attempt) || attempt.binder != null || attempt.invalidated.get()) return
+        if (!attempt.isCurrent || attempt.binder != null || attempt.invalidated.get()) return
         val proxy = IPaymentService.Stub.asInterface(binder)
         if (proxy == null) {
             fail(attempt, Failure.NullBinding)
@@ -110,7 +136,7 @@ internal class PaymentServiceClient(context: Context) {
     }
 
     private fun versionReceived(attempt: ConnectionAttempt, result: VersionResult) {
-        if (!isCurrent(attempt) || attempt.invalidated.get()) return
+        if (!attempt.isCurrent || attempt.invalidated.get()) return
         when (result) {
             is VersionResult.Version -> {
                 if (policy.versionReceived(attempt.identity, result.value) &&
@@ -130,7 +156,8 @@ internal class PaymentServiceClient(context: Context) {
     }
 
     private fun lost(attempt: ConnectionAttempt) {
-        if (!isCurrent(attempt)) return
+        if (!attempt.isCurrent) return
+        payments.connectionLost()
         val recovery = policy.lost(attempt.identity)
         release(attempt)
         if (recovery != null) main.post { policy.recover(recovery)?.let(::bindAttempt) }
@@ -142,6 +169,7 @@ internal class PaymentServiceClient(context: Context) {
 
     private fun release(attempt: ConnectionAttempt, rejectedBind: Boolean = false) {
         if (active !== attempt) return
+        payments.connectionLost()
         active = null
         attempt.invalidated.set(true)
         val binder = attempt.binder
@@ -160,9 +188,9 @@ internal class PaymentServiceClient(context: Context) {
         }
     }
 
-    private fun isCurrent(owner: ConnectionAttempt): Boolean = active === owner && policy.isCurrent(owner.identity)
-
     private inner class ConnectionAttempt(val identity: PaymentConnectionPolicy.Attempt) : ServiceConnection {
+        val isCurrent: Boolean
+            get() = active === this && policy.isCurrent(identity)
         val invalidated = AtomicBoolean(false)
         val dead = AtomicBoolean(false)
         var binder: IBinder? = null
@@ -224,5 +252,154 @@ internal class PaymentServiceClient(context: Context) {
             // Malformed/unsupported remote replies must not make a connection usable.
             VersionResult.Failed(Failure.VersionQueryFailed)
         }
+    }
+}
+
+/** Android resources for one payment; connection recovery never calls submit. */
+private class PaymentRequests(
+    private val policy: PaymentRequestPolicy,
+    private val worker: ThreadPoolExecutor,
+    private val main: Handler,
+) {
+    val state: PaymentSubmissionState
+        get() = policy.state
+    private var active: Resources? = null
+
+    fun submit(
+        attempt: PaymentConnectionPolicy.Attempt,
+        proxy: IPaymentService,
+        connectionInvalidated: AtomicBoolean,
+        id: PaymentId,
+        key: IdempotencyKey,
+        amount: PaymentAmount,
+        onDead: () -> Unit,
+    ): PaymentSubmissionAdmission {
+        val parcel = PaymentTransportMapper.request(id, key, amount) ?: return PaymentSubmissionAdmission.InvalidRequest
+        val admission = policy.begin(attempt, id, key)
+        if (admission == PaymentSubmissionAdmission.Accepted) {
+            val token = checkNotNull(policy.active)
+            val resources = Resources(token)
+            active = resources
+            resources.callback = ResultCallback { result ->
+                main.post {
+                    if (!connectionInvalidated.get() && policy.isCurrent(token)) {
+                        when (result) {
+                            is CallbackResult.Result -> {
+                                val mapped = PaymentTransportMapper.result(result.parcel)
+                                policy.result(token, mapped)
+                            }
+
+                            is CallbackResult.Rejected -> policy.fail(token, result.failure)
+                        }
+                        clear(resources)
+                    }
+                }
+            }
+            dispatch(resources, proxy, parcel, connectionInvalidated, onDead)
+        }
+        return admission
+    }
+
+    fun connectionLost() {
+        active?.let {
+            policy.fail(it.token, PaymentTransportFailure.ConnectionLost)
+            clear(it)
+        }
+    }
+
+    fun abandon() {
+        policy.abandon()
+        active?.let(::clear)
+    }
+
+    private fun dispatch(
+        resources: Resources,
+        proxy: IPaymentService,
+        parcel: PaymentRequestParcel,
+        connectionInvalidated: AtomicBoolean,
+        onDead: () -> Unit,
+    ) {
+        val callback = checkNotNull(resources.callback)
+        val task = FutureTask<Unit> {
+            if (!resources.invalidated.get() && !connectionInvalidated.get()) {
+                val failure = send(proxy, parcel, callback)
+                if (failure == PaymentTransportFailure.ConnectionLost) connectionInvalidated.set(true)
+                if (failure != null) {
+                    main.post {
+                        if (failure == PaymentTransportFailure.ConnectionLost) onDead()
+                        if (policy.fail(resources.token, failure)) clear(resources)
+                    }
+                }
+            }
+        }
+        resources.task = task
+        try {
+            worker.execute(task)
+        } catch (_: RejectedExecutionException) {
+            policy.fail(resources.token, PaymentTransportFailure.WorkerUnavailable)
+            clear(resources)
+        }
+    }
+
+    private fun clear(resources: Resources) {
+        if (active !== resources) return
+        active = null
+        resources.invalidated.set(true)
+        resources.callback?.detach()
+        resources.callback = null
+        resources.task?.let {
+            it.cancel(true)
+            worker.remove(it)
+        }
+        resources.task = null
+    }
+
+    private class Resources(val token: PaymentRequestPolicy.Token) {
+        val invalidated = AtomicBoolean(false)
+        var callback: ResultCallback? = null
+        var task: FutureTask<Unit>? = null
+    }
+
+    private companion object {
+        fun send(
+            proxy: IPaymentService,
+            request: PaymentRequestParcel,
+            callback: IPaymentResultCallback,
+        ): PaymentTransportFailure? = try {
+            proxy.submitPayment(request, callback)
+            null
+        } catch (_: DeadObjectException) {
+            PaymentTransportFailure.ConnectionLost
+        } catch (_: RemoteException) {
+            PaymentTransportFailure.DispatchFailed
+        } catch (_: SecurityException) {
+            PaymentTransportFailure.PermissionDenied
+        } catch (_: RuntimeException) {
+            // Unsupported/malformed transactions never manufacture a payment outcome.
+            PaymentTransportFailure.DispatchFailed
+        }
+    }
+}
+
+private sealed interface CallbackResult {
+    data class Result(val parcel: PaymentResultParcel?) : CallbackResult
+    data class Rejected(val failure: PaymentTransportFailure) : CallbackResult
+}
+
+/** Detachment releases the client even if a remote peer retains this Binder. */
+private class ResultCallback(receiver: (CallbackResult) -> Unit) : IPaymentResultCallback.Stub() {
+    private val receiver = AtomicReference<((CallbackResult) -> Unit)?>(receiver)
+
+    override fun onResult(result: PaymentResultParcel?) {
+        receiver.getAndSet(null)?.invoke(CallbackResult.Result(result))
+    }
+
+    override fun onRejected(rejectionCode: Int) {
+        val failure = PaymentTransportMapper.rejection(rejectionCode)
+        receiver.getAndSet(null)?.invoke(CallbackResult.Rejected(failure))
+    }
+
+    fun detach() {
+        receiver.set(null)
     }
 }

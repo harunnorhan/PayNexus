@@ -15,8 +15,10 @@ has local JVM compatibility-policy tests and compiler/artifact verification.
 The Payment Service shell implements the version query. PNX-013 adds the Merchant
 binding client with manual cross-application verification. PNX-014 adds deterministic
 Merchant connection-policy tests, runtime version validation, Binder death monitoring,
-and bounded recovery. Automated IPC integration, persistence, server, and end-to-end
-test infrastructure remain future work.
+and bounded recovery. PNX-015 adds V2 mapping, request-policy, and synthetic Service JVM tests.
+Automated IPC integration, persistence, server, and end-to-end test infrastructure
+remain future work. PNX-011 through PNX-014 sections below preserve historical
+procedures and evidence; they do not establish PNX-015 runtime verification.
 
 ## Philosophy and Naming
 
@@ -677,3 +679,174 @@ Racing duplicate loss notifications were observed; that does not establish every
 stale-event interleaving. JVM policy tests cover decisions without claiming Android
 fault injection. No instrumentation infrastructure, server communication, payment
 transport, production signing policy, or comprehensive Binder resilience is claimed.
+
+## Asynchronous Payment Transport Verification (PNX-015)
+
+PNX-015 uses JVM tests and local non-device build/artifact verification only.
+Codex must not run adb, install tasks, emulator/device interaction, or debugger
+runtime verification for this task. Harun + ChatGPT own the separate manual
+checklist below. No runtime IPC success or remote CI success is inferred.
+
+Contract tests accept only V2 and reject old, negative, extreme, and future values.
+Six additional bounds tests exercise missing primitive bytes, invalid sizes, UTF-16
+prefix/terminator/padding calculations, null prefixes, truncated string sizes, and
+large-length overflow prevention. They test the production arithmetic helper, not
+Android Parcel calls; real malformed-Parcel delivery remains runtime-unverified.
+Merchant mapping tests cover exact identifiers, 256-code-unit bounds, positive
+Long extremes, explicit wire outcomes, and malformed results. Request-policy tests
+cover readiness, one active request, immediate completion, duplicate and stale
+callbacks, reused identifiers, mismatches, transport failures, abandonment, and
+connection recovery without replay. Existing connection-policy tests retain all
+PNX-014 scenarios with V2 expectations; amount-entry and domain tests are preserved.
+Service tests cover null/blank/oversized request fields, nonpositive amounts,
+noncanonical currencies, exact mapping/echoing, and deterministic modulo outcomes.
+No new mocking, Parcelize, instrumentation, or test-support framework is introduced.
+
+Tests call production mapping/policy logic with ordinary values, never Parcel or
+Binder methods. They cannot prove marshalling, callback delivery, Android threading,
+process death, permission enforcement, or real lifecycle cleanup. Generated code
+and artifact inspection provide compilation/static evidence only.
+
+### Local Non-Device Commands
+
+Run from the repository root with JDK 17 and SDK Platform 37:
+
+```bash
+./gradlew :payment:domain:test --rerun-tasks
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew :apps:merchant:test --rerun-tasks
+./gradlew :apps:payment-service:test --rerun-tasks
+./gradlew :payment:contract:assembleDebug
+./gradlew :apps:merchant:assembleDebug
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :payment:contract:lint
+./gradlew :apps:merchant:lint
+./gradlew :apps:payment-service:lint
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :payment:contract:dependencies --configuration debugRuntimeClasspath
+./gradlew :payment:contract:dependencies --configuration releaseRuntimeClasspath
+./gradlew :apps:merchant:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:merchant:dependencies --configuration releaseRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+git status --short
+git diff
+```
+
+Inspect fresh XML/HTML test reports for actual method counts, failures/errors/skips,
+and distinguish executed, cached, and up-to-date tasks. Assembly compiles AIDL.
+Discover generated Java, AAR/APK, and merged manifest paths after assembly. Verify
+query transaction offset 0, appended submission offset 1, one-way request/callback
+flags, manual Parcelable creators and field symmetry, packaged contract classes,
+unchanged explicit signature boundary, and no Internet permission or new component.
+Inspect debug/release dependency graphs for the approved Service domain dependency
+and existing test library only; contract remains domain-independent.
+
+### Manual Runtime Checklist — Harun + ChatGPT Only
+
+All PNX-015 device/runtime cases are pending. Use a disposable development environment
+and matching V2 apps. No production diagnostics or automatic payment UI is needed.
+
+1. Confirm separate application processes and V2 readiness. On Merchant's main
+   thread in Android Studio's debugger, invoke the Activity-owned client's
+   `submitPayment(PaymentId(...), IdempotencyKey(...), PaymentAmount(...))` with
+   synthetic values. Resume execution before waiting; inspect `submissionState`.
+2. Submit 300, 301, and 302 TRY minor units individually. Observe a real remote
+   proxy, exact Service receipt, asynchronous callback, and approved/declined/failed
+   mapping. No bank/acquirer operation occurs. Dispatch return is not completion.
+3. Repeat with mixed-case/padded identifiers, values above Int.MAX_VALUE, and
+   Long.MAX_VALUE. Confirm exact values through both process boundaries.
+4. Submit again while pending: verify local rejection and no second dispatch.
+   Delay a callback, stop/restart or rotate Merchant, and verify old delivery cannot
+   complete a newer request, including reused identifier strings. Exercise duplicate
+   delivery where controlled debugger ordering permits it.
+5. Exercise Service loss while pending: uncertain transport failure, at most one
+   connection recovery per started interval, and no payment replay. Background and
+   foreground again to verify fresh ownership. Record unexercised races explicitly.
+6. Pair V2 Merchant/V1 Service and V1 Merchant/V2 Service: incompatibility and no
+   payment dispatch. Test absent Service and permission denial separately where
+   available; matching-signature success does not prove rejection enforcement.
+7. Exercise invalid request/result and remote rejection using controlled debugger
+   inputs where practical. Confirm protocol failure never becomes a domain decline.
+8. Confirm amount entry still displays local amount-ready/no-payment confirmation.
+   Inspect permissions and logs for absence of new networking or payload logging.
+
+Record device/API, app versions, event ordering, and every unavailable scenario.
+One-way calls, malformed parcels, missing callbacks, death races, and cancellation
+need real runtime evidence. No callback deadline or durable idempotency exists.
+Service-to-Server integration and remote CI remain separate future verification.
+
+### PNX-015 Local Non-Device Verification Record
+
+Final verification continued on 2026-09-28 using OpenJDK 17.0.17 and SDK Platform 37, starting from
+clean branch `feature/PNX-015-payment-ipc-transport` at `92c42e7`:
+
+| Suite | Test methods | Failures | Errors | Skips |
+| --- | ---: | ---: | ---: | ---: |
+| Payment domain (`test`) | 26 | 0 | 0 | 0 |
+| Contract (`testDebugUnitTest`) | 10 | 0 | 0 | 0 |
+| Merchant (`testDebugUnitTest`) | 105 | 0 | 0 | 0 |
+| Payment Service (`testDebugUnitTest`) | 9 | 0 | 0 | 0 |
+
+Fresh focused `--rerun-tasks` commands above passed. Their invocations executed
+10, 21, 64, and 49 actionable tasks respectively. XML and HTML reports were
+inspected. Merchant retains 67 amount-entry tests and 20 connection-policy tests,
+plus 12 request-policy and 6 mapping tests. Service has 6 mapping and 3 synthetic
+processor tests. Contract has 4 compatibility and 6 bounds tests: 150 methods total
+across the four suites. Table cases are not counted as additional JUnit methods.
+No release-unit-test execution is claimed.
+
+All three `assembleDebug` and `lint` commands passed, as did `spotlessCheck`,
+`detekt`, `qualityCheck`, and `build`. Verification used incremental tasks where
+applicable: the final qualityCheck had 4 executed/181 up-to-date tasks; build had
+28 executed/386 up-to-date tasks. Initial Detekt line-length,
+return-count, condition-complexity, and class-function-count findings were fixed
+in source. Scoped Kotlin Spotless apply tasks formatted the three affected modules.
+No suppression, baseline, quality configuration, test weakening, or CI change was
+introduced. Final diff review and `git diff --check` passed.
+
+All six debug/release runtime dependency reports passed inspection. Contract has
+only Kotlin library support; Merchant keeps design-system, contract, and domain
+as direct project dependencies. Service now consumes contract and domain, with
+existing core modules transitively. Its only new test declaration uses the existing
+`kotlin.test`/JUnit alias. There is no new external library, Parcelize plugin,
+networking/persistence/DI stack, or server client. Existing Merchant transitive
+AndroidX/Compose coroutine and serialization support is unchanged.
+
+Generated debug/release Java under
+`payment/contract/build/generated/aidl_source_output_dir/` preserves version-query
+transaction offset 0 and appends submission at offset 1. Submission and both
+callback methods use `FLAG_ONEWAY` and no reply Parcel. Manual Parcelable source
+read/write order and types match. Final review found that unchecked primitive
+reads could default a missing result reason to zero. The final readers check every
+primitive width and each string's prefix/padded UTF-16 size before decoding, with
+overflow-safe Long size arithmetic and decoded length/position checks. Fixed-message
+BadParcelableException rejects incomplete encodings; application mapping still
+rejects null/invalid semantic fields. This retains the approved wire layout.
+These are source/JVM/static findings, not evidence of actual malformed-Parcel
+execution. Both AARs under `payment/contract/build/outputs/aar/`
+package generated interfaces/Stubs/proxies, transport classes and creators; their
+manifests contain no components or permissions, and classes are contract-only.
+Generated default classes are compiler output, not registered fallback behavior.
+
+Merged debug/release manifests under each app's
+`build/intermediates/merged_manifests/` retain the sole Service-owned signature
+permission, Merchant's request, and the existing explicit exported Service.
+Offline `aapt2 dump permissions` and `dexdump` inspection of debug/release APKs
+under each app's `build/outputs/apk/` confirmed no Internet permission, packaged
+contract interfaces/parcelables/creators, and no opposite application implementation
+classes. Merchant's existing AndroidX components and debug-only PreviewActivity
+remain library contributions. No manifest or signing configuration changed.
+Source/diff inspection found no payment payload logging, secrets, credentials,
+signing material, floating-point money, or direct Merchant-to-Server path.
+
+**Runtime/device verification was not performed and remains PENDING.** No adb,
+install task, emulator interaction, physical-device interaction, or debugger runtime
+verification was executed. JVM tests and artifact inspection do not prove real
+cross-process delivery, marshalling, lifecycle races, or permission enforcement.
+No commit, push, PR, GitHub settings, or protection-rule changes were made; remote
+CI success is not claimed. Server integration remains deferred.

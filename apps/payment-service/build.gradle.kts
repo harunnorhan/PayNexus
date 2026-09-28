@@ -12,4 +12,6 @@ android {
 
 dependencies {
     implementation(project(":payment:contract"))
+    implementation(project(":payment:domain"))
+    testImplementation(libs.kotlin.test.junit)
 }

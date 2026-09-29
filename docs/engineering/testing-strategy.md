@@ -16,9 +16,11 @@ The Payment Service shell implements the version query. PNX-013 adds the Merchan
 binding client with manual cross-application verification. PNX-014 adds deterministic
 Merchant connection-policy tests, runtime version validation, Binder death monitoring,
 and bounded recovery. PNX-015 adds V2 mapping, request-policy, and synthetic Service JVM tests.
-Automated IPC integration, persistence, server, and end-to-end test infrastructure
-remain future work. PNX-011 through PNX-014 sections below preserve historical
-procedures and evidence; they do not establish PNX-015 runtime verification.
+PNX-017 adds a deterministic Ktor in-process test for the Payment Server health
+foundation. Automated IPC integration, persistence, payment-server API, and
+end-to-end test infrastructure remain future work. PNX-011 through PNX-016
+sections below preserve historical procedures and evidence; they do not establish
+PNX-017 runtime verification.
 
 ## Philosophy and Naming
 
@@ -81,13 +83,14 @@ tests for DAOs, migrations, transactions, and durable idempotency once persisten
 exists. Isolate test databases and verify failure behavior without external
 production services or data.
 
-### Server — Future
+### Server
 
 Keep server domain and application rules in JVM unit tests. Test Ktor routes,
 request validation, response mapping, and idempotency with controlled test
-infrastructure when introduced. Database integration tests belong with the
-owning persistence implementation. Do not make ordinary unit tests depend on
-real network access.
+infrastructure when introduced. PNX-017 uses Ktor's in-process test host to verify
+the application module and deterministic `GET /health` response without binding a
+real port. Database integration tests belong with the owning persistence
+implementation. Do not make ordinary unit tests depend on real network access.
 
 ### End-to-End — Future
 
@@ -189,6 +192,77 @@ After an authorized Pull Request is created, observe the actual CI result and
 verify required-check enforcement separately. A workflow file alone does not
 prove repository protection settings or CI success. Report only commands and
 results actually observed, including limitations and skipped or cached work.
+
+## Payment Server Application Foundation Verification (PNX-017)
+
+PNX-017 adds one focused JVM test in `:server:application`. It loads the same
+`Application.module()` used by the runnable bootstrap through Ktor's in-process
+test host and verifies that `GET /health` returns HTTP 200, JSON with UTF-8, and
+the exact deterministic body:
+
+```json
+{"status":"ok","service":"paynexus-payment-server"}
+```
+
+The test starts no external server process, binds no network port, and requires no
+database or downstream service. It does not prove Netty socket behavior,
+deployment configuration, TLS, proxy behavior, production availability,
+Service-to-Server transport, or payment processing.
+
+Use JDK 17 and the committed Gradle Wrapper from the repository root:
+
+```bash
+./gradlew :server:application:test --rerun-tasks
+./gradlew :server:application:build
+./gradlew :server:domain:build :server:infrastructure:build
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :server:application:dependencies --configuration runtimeClasspath
+./gradlew :server:application:dependencies --configuration testRuntimeClasspath
+./gradlew :server:domain:dependencies --configuration runtimeClasspath
+git diff --check
+```
+
+Inspect the server application XML and HTML test reports for actual counts and
+failures. Inspect runtime and test dependency graphs for the intended Ktor
+dependencies and confirm that `:server:domain` remains free of Ktor and Android.
+Manual/external server verification is deferred and must not be inferred from JVM
+tests or build success.
+
+### PNX-017 Local Non-Runtime Verification Record
+
+On 2026-09-29, Codex completed the approved local JVM/build verification on
+`feature/PNX-017-payment-server-foundation`:
+
+- the final fresh `:server:application:test --rerun-tasks` run executed one test
+  with zero failures, errors, or skips, confirmed in the XML report;
+- `:server:application:build` produced the application JAR, start scripts, and
+  ZIP/TAR distributions with
+  `com.paynexus.server.application.ApplicationKt` as the main class;
+- the focused domain/infrastructure builds, `spotlessCheck`, `detekt`,
+  `qualityCheck`, and repository `build` passed;
+- the final `qualityCheck` reported 186 actionable tasks and the final repository
+  build reported 421 actionable tasks;
+- runtime and test dependency reports resolved Ktor 3.6.0, with only
+  `ktor-server-core` and `ktor-server-netty` declared for production and
+  `ktor-server-test-host` plus the existing Kotlin/JUnit alias declared for tests;
+  Ktor's graph selected Kotlin stdlib 2.3.21 while repository compilation remained
+  on Kotlin plugin 2.2.10, and compilation/tests/build completed successfully; and
+- the `:server:domain` runtime graph contains only its existing pure Kotlin project
+  dependencies and Kotlin stdlib, with no Ktor or Android dependency.
+
+Initial verification exposed and fixed the Ktor 3.6 test API difference, the
+missing explicit UTF-8 response parameter, an application-distribution collision
+from the unused domain dependency, and one Spotless layout finding. The final
+implementation removes that unused application-to-domain dependency; no quality
+rule, suppression, test, compiler, AGP, Gradle, or repository-wide tool version
+was weakened or changed.
+
+No external server process, manual socket request, browser, curl, Android runtime,
+emulator, device, or adb verification was performed. No commit, push, Pull Request,
+merge, GitHub settings change, or remote CI verification was performed.
 
 ## IPC Contract Foundation Verification
 

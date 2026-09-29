@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, V2 asynchronous payment IPC transport, and runnable Ktor Payment Server foundation are implemented; Android runtime verification and Service-to-Server integration remain pending.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, V2 asynchronous payment IPC transport, and versioned Ktor Payment Server payment API are implemented; Android runtime verification and Service-to-Server integration remain pending.
 
 ## Documentation
 
@@ -104,10 +104,37 @@ Run its deterministic in-process JVM test with:
 ```
 
 No external server process, socket, database, or downstream service is required by
-the test. There is still no payment HTTP API, persistence, idempotency enforcement,
-authentication, or Payment Service-to-Server transport. `:server:domain` remains
-framework-independent, and the mandatory path remains Merchant Application ->
-Payment Service -> Payment Server.
+the test. At the PNX-017 baseline there was no payment HTTP API, persistence,
+idempotency enforcement, authentication, or Payment Service-to-Server transport.
+`:server:domain` remained framework-independent, and the mandatory path remained
+Merchant Application -> Payment Service -> Payment Server.
+
+### Payment Server API (PNX-018)
+
+`:server:application` exposes the first versioned Payment Server payment endpoint:
+
+```text
+POST /v1/payments
+```
+
+The JSON request carries caller-owned `paymentId` and `idempotencyKey` strings,
+positive `Long` `amountMinorUnits`, and canonical `TRY` currency. Identifiers are
+nonblank, limited to 256 UTF-16 code units, accepted without normalization, and
+echoed exactly. Malformed JSON, missing/null/wrongly typed fields, unknown fields,
+invalid identifiers, nonpositive amounts, and unsupported or noncanonical currency
+return HTTP 400 with `{"error":"INVALID_REQUEST"}`.
+
+Valid synthetic requests return HTTP 200. Positive minor units modulo three map
+to `APPROVED`, `DECLINED` with `UNSPECIFIED`, or `FAILED` with
+`PROCESSING_ERROR`. These are explicit wire strings, not enum ordinals, and are
+only a deterministic transport demonstration—not bank or acquirer authorization.
+
+The HTTP DTOs, boundary validation, and stateless processor are owned by
+`:server:application`; no Payment Service client or Merchant server path exists.
+`idempotencyKey` is transported but not durably enforced. There is no database,
+persistence, transaction lookup, authentication, retry, or production endpoint.
+`GET /health` remains unchanged. Deterministic tests use Ktor's in-process test
+host and require no real port or external process.
 
 ### Design System Foundation
 

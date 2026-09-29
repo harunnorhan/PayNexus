@@ -17,10 +17,12 @@ binding client with manual cross-application verification. PNX-014 adds determin
 Merchant connection-policy tests, runtime version validation, Binder death monitoring,
 and bounded recovery. PNX-015 adds V2 mapping, request-policy, and synthetic Service JVM tests.
 PNX-017 adds a deterministic Ktor in-process test for the Payment Server health
-foundation. Automated IPC integration, persistence, payment-server API, and
-end-to-end test infrastructure remain future work. PNX-011 through PNX-016
-sections below preserve historical procedures and evidence; they do not establish
-PNX-017 runtime verification.
+foundation. PNX-018 adds deterministic in-process request, validation, outcome,
+error-contract, and health-regression tests for the versioned Payment Server API.
+Automated IPC integration, persistence, Service-to-Server transport, and end-to-end
+test infrastructure remain future work. PNX-011 through PNX-017 sections below
+preserve historical procedures and evidence; they do not establish PNX-018
+verification.
 
 ## Philosophy and Naming
 
@@ -89,7 +91,10 @@ Keep server domain and application rules in JVM unit tests. Test Ktor routes,
 request validation, response mapping, and idempotency with controlled test
 infrastructure when introduced. PNX-017 uses Ktor's in-process test host to verify
 the application module and deterministic `GET /health` response without binding a
-real port. Database integration tests belong with the owning persistence
+real port. PNX-018 uses the same test host for `POST /v1/payments`, including
+strict JSON decoding, exact identifier preservation, `Long` amount boundaries,
+canonical currency, all synthetic outcomes, and deterministic invalid-request
+responses. Database integration tests belong with the owning persistence
 implementation. Do not make ordinary unit tests depend on real network access.
 
 ### End-to-End — Future
@@ -263,6 +268,78 @@ was weakened or changed.
 No external server process, manual socket request, browser, curl, Android runtime,
 emulator, device, or adb verification was performed. No commit, push, Pull Request,
 merge, GitHub settings change, or remote CI verification was performed.
+
+## Versioned Payment Server API Verification (PNX-018)
+
+PNX-018 extends the existing `testApplication` coverage without binding a network
+port or starting an external server. The tests submit raw JSON so malformed,
+missing, null, wrongly typed, out-of-range, and unknown-field inputs exercise the
+production decoding boundary. They verify HTTP status, JSON content type, exact
+response bodies, all three deterministic outcomes, exact identifier echoing,
+256-code-unit bounds, positive `Long` transport including `Long.MAX_VALUE`, and
+the unchanged health response.
+
+Use JDK 17 and the committed Gradle Wrapper from the repository root:
+
+```bash
+./gradlew :server:application:test --rerun-tasks
+./gradlew :server:application:build
+./gradlew :server:domain:build :server:infrastructure:build
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :server:application:dependencies --configuration runtimeClasspath
+./gradlew :server:application:dependencies --configuration testRuntimeClasspath
+./gradlew :server:domain:dependencies --configuration runtimeClasspath
+./gradlew :server:application:distZip :server:application:distTar
+git diff --check
+```
+
+Inspect the server application XML/HTML reports for exact test counts and outcomes.
+Inspect both dependency graphs and the ZIP/TAR distributions for Ktor 3.6 JSON
+support, absence of Android dependencies, and absence of duplicate project
+`domain.jar` artifacts. No device, emulator, Payment Service process, browser,
+curl, real socket, or manual/end-to-end verification belongs to PNX-018. Remote CI
+remains separate evidence after authorized Git work.
+
+### PNX-018 Local Non-Runtime Verification Record
+
+On 2026-09-29, Codex completed the approved local JVM/build verification on
+`feature/PNX-018-payment-server-api`:
+
+- the final fresh `:server:application:test --rerun-tasks` run executed 15 tests
+  with zero failures, errors, or skips: 14 payment API tests and the existing
+  health regression test;
+- `:server:application:build` and the focused server domain/infrastructure builds
+  passed, producing the application JAR, start scripts, and ZIP/TAR distributions;
+- final `spotlessCheck`, `detekt`, `qualityCheck`, and repository `build` passed;
+  `qualityCheck` reported 186 actionable tasks and `build` reported 421;
+- runtime and test dependency reports retained Ktor 3.6.0 and resolved the approved
+  direct Content Negotiation, kotlinx-JSON, and Status Pages additions. The Ktor
+  graph selected Kotlin stdlib 2.3.21 and kotlinx.serialization 1.11.0. Ktor 3.6's
+  Content Negotiation graph also brings routing/OpenAPI, authentication, and client
+  artifacts transitively; PayNexus does not configure or call those features;
+- the application runtime graph contains no Android or project-module dependency.
+  The unchanged `:server:domain` graph remains pure Kotlin with its existing core
+  and payment-domain project dependencies and no Ktor or Android dependency; and
+- ZIP and TAR entry sets match, have no duplicate JAR basename, contain no
+  `domain.jar` or Android artifact, and package only `application.jar` as a
+  PayNexus project artifact.
+
+Initial verification exposed Kotlin nullable smart-cast compilation errors, the
+Ktor 3.6 request-header test API difference, decoder exceptions requiring explicit
+`BadRequestException` mapping, quoted numeric JSON being accepted as a `Long`, and
+Spotless/Detekt findings. The final implementation establishes non-null identifiers
+explicitly, sends the test content type as a header, sanitizes expected bad-request
+exceptions, validates the amount JSON token before `Long` conversion, and fixes
+formatting/complexity findings. No test, assertion, quality rule, suppression,
+baseline, Ktor version, or repository-wide tool version was weakened or changed.
+
+No real server process, socket, curl, browser, device, emulator, adb, Payment
+Service runtime, manual integration, or end-to-end verification was performed.
+No commit, push, Pull Request, merge, GitHub setting, issue, or remote CI state was
+created or changed.
 
 ## IPC Contract Foundation Verification
 

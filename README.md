@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, and V2 asynchronous payment IPC transport are implemented; PNX-016 device verification and server integration remain pending.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, V2 asynchronous payment IPC transport, and runnable Ktor Payment Server foundation are implemented; Android runtime verification and Service-to-Server integration remain pending.
 
 ## Documentation
 
@@ -25,7 +25,7 @@ Key documents:
 - [System Context](docs/architecture/system-context.md)
 - [Component Boundaries](docs/architecture/component-boundaries.md)
 - [Engineering Principles](docs/engineering/engineering-principles.md)
-- [Testing Strategy](docs/engineering/testing-strategy.md) — Domain and Merchant JVM tests, with local runtime verification and guidance for future testing layers.
+- [Testing Strategy](docs/engineering/testing-strategy.md) — Domain, Merchant, and Payment Server JVM tests, with local runtime verification and guidance for future testing layers.
 - [Architecture Decision Records](docs/adr/)
 
 ## Project Structure
@@ -76,8 +76,38 @@ The Merchant Application must never communicate with the Payment Server directly
 - `payment:contract` — Android-specific versioned AIDL/Binder contract
 - `payment:domain` — Payment-specific domain logic
 - `server:domain` — Server-side domain layer
-- `server:application` — Server application/use-case layer
+- `server:application` — Runnable server process and application-composition layer
 - `server:infrastructure` — Server infrastructure implementations
+
+### Payment Server Foundation (PNX-017)
+
+`:server:application` is a runnable Kotlin/Ktor application with an explicit
+bootstrap entry point and reusable `Application.module()`. Its current HTTP
+surface is deliberately limited to:
+
+```text
+GET /health
+HTTP 200
+Content-Type: application/json; charset=UTF-8
+{"status":"ok","service":"paynexus-payment-server"}
+```
+
+The endpoint reports only that the application module is responding. It does not
+probe external dependencies or claim production readiness. The application binds
+to loopback port 8080 when run locally; production configuration and deployment
+remain deferred.
+
+Run its deterministic in-process JVM test with:
+
+```bash
+./gradlew :server:application:test
+```
+
+No external server process, socket, database, or downstream service is required by
+the test. There is still no payment HTTP API, persistence, idempotency enforcement,
+authentication, or Payment Service-to-Server transport. `:server:domain` remains
+framework-independent, and the mandatory path remains Merchant Application ->
+Payment Service -> Payment Server.
 
 ### Design System Foundation
 

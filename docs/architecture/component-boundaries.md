@@ -122,6 +122,20 @@ The Payment Server must not depend on:
 - Merchant UI modules
 - Android IPC implementation classes
 
+### Payment Server Application Foundation (PNX-017)
+
+`:server:application` owns the runnable Ktor process bootstrap, application
+composition, and HTTP routing. Its initial surface is the unversioned
+`GET /health` foundation endpoint, which returns a fixed healthy response without
+consulting payment state or external dependencies. The route is intentionally
+outside the future versioned payment API.
+
+`:server:domain` remains framework-independent and has no Ktor or Android
+dependency. `:server:infrastructure` remains the boundary for future external
+adapters; it is not wired into the health endpoint. PNX-017 introduces no payment
+DTO, persistence, idempotency, Payment Service client, or Merchant-to-Server path.
+Versioned payment transport under ADR-0004 remains deferred.
+
 ## Dependency Direction
 
 The intended dependency direction is:

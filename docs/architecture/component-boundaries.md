@@ -136,6 +136,28 @@ adapters; it is not wired into the health endpoint. PNX-017 introduces no paymen
 DTO, persistence, idempotency, Payment Service client, or Merchant-to-Server path.
 Versioned payment transport under ADR-0004 remains deferred.
 
+### Versioned Payment Server API (PNX-018)
+
+`:server:application` owns `POST /v1/payments`, JSON Content Negotiation, transport
+DTOs, trust-boundary validation, explicit response mapping, controlled HTTP error
+mapping, and the stateless deterministic synthetic processor. Transport models are
+separate from payment-domain models. Accepted identifiers remain exact and are
+bounded to 256 UTF-16 code units; amounts use positive `Long` minor units and
+canonical TRY only.
+
+The application-local accepted request and synthetic outcome types have no Ktor or
+serialization dependency. `:server:application` deliberately does not depend on
+`:payment:domain` or `:server:domain`: this small API foundation does not justify
+reintroducing the existing default `domain.jar` application-distribution collision.
+`:server:domain` remains framework-independent and unchanged. Archive restructuring
+is outside PNX-018.
+
+The API echoes `paymentId` and `idempotencyKey`, but introduces no durable
+idempotency enforcement, persistence, transaction lookup, authentication, retry,
+or external integration. `GET /health` remains unchanged. Payment Service does not
+yet own an HTTP client, and Merchant remains unaware of the server API. The only
+permitted runtime direction remains Merchant -> Payment Service -> Payment Server.
+
 ## Dependency Direction
 
 The intended dependency direction is:

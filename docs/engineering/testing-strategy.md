@@ -19,10 +19,11 @@ and bounded recovery. PNX-015 adds V2 mapping, request-policy, and synthetic Ser
 PNX-017 adds a deterministic Ktor in-process test for the Payment Server health
 foundation. PNX-018 adds deterministic in-process request, validation, outcome,
 error-contract, and health-regression tests for the versioned Payment Server API.
-Automated IPC integration, persistence, Service-to-Server transport, and end-to-end
-test infrastructure remain future work. PNX-011 through PNX-017 sections below
-preserve historical procedures and evidence; they do not establish PNX-018
-verification.
+PNX-019 adds deterministic Payment Service JVM tests for its typed HTTP client with
+Ktor MockEngine. Automated IPC integration, persistence, live Service-to-Server
+transport, and end-to-end test infrastructure remain future work. PNX-011 through
+PNX-018 sections below preserve historical procedures and evidence; they do not
+establish PNX-019 verification.
 
 ## Philosophy and Naming
 
@@ -340,6 +341,51 @@ No real server process, socket, curl, browser, device, emulator, adb, Payment
 Service runtime, manual integration, or end-to-end verification was performed.
 No commit, push, Pull Request, merge, GitHub setting, issue, or remote CI state was
 created or changed.
+
+## Payment Service HTTP Client Foundation Verification (PNX-019)
+
+PNX-019 tests the internal Payment Service HTTP boundary on the JVM with Ktor
+MockEngine. The tests exercise exact `POST /v1/payments` request mapping, JSON
+content type, exact caller-owned identifiers, canonical TRY, `Long.MAX_VALUE`, all
+three supported business outcomes, strict JSON decoding, HTTP 400 and unexpected
+status classification, invalid outcome combinations, response correlation,
+transport failure, and cancellation propagation. Mapper tests separately cover the
+complete valid combination set and representative contradictory values.
+
+MockEngine binds no port and performs no DNS or socket access. These tests do not
+establish Android network behavior, platform-engine behavior, Internet permission,
+cleartext policy, TLS, deployment configuration, or end-to-end Service processing.
+The production Binder path remains local through `SyntheticPaymentProcessor`; the
+new client is not instantiated or invoked by `PaymentService`.
+
+Use JDK 17 and SDK Platform 37 from the repository root:
+
+```bash
+./gradlew :apps:payment-service:test --rerun-tasks
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :apps:payment-service:lint
+./gradlew :apps:payment-service:dependencies --configuration debugRuntimeClasspath
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+git diff --check
+git status --short
+git diff
+```
+
+Inspect the Payment Service XML and HTML test reports for exact counts, failures,
+errors, skips, and execution state. Inspect the debug runtime graph for Ktor 3.6.0,
+the Android client engine, Content Negotiation, Kotlin serialization, and absence of
+server project dependencies. `ktor-client-mock` must remain test-only. Inspect the
+source and merged manifests for absence of Internet permission and network security
+configuration, and review the diff for absence of Merchant, AIDL, Parcelable,
+contract-version, Binder-processing, quality-rule, and CI changes.
+
+Runtime/device/manual-network verification is intentionally deferred. No real
+Payment Server process, socket, browser, curl, adb, emulator, device, persistence,
+retry, or durable idempotency belongs to PNX-019. Remote CI remains separate
+evidence after later authorized commit, push, and Pull Request work.
 
 ## IPC Contract Foundation Verification
 

@@ -154,9 +154,38 @@ is outside PNX-018.
 
 The API echoes `paymentId` and `idempotencyKey`, but introduces no durable
 idempotency enforcement, persistence, transaction lookup, authentication, retry,
-or external integration. `GET /health` remains unchanged. Payment Service does not
-yet own an HTTP client, and Merchant remains unaware of the server API. The only
-permitted runtime direction remains Merchant -> Payment Service -> Payment Server.
+or external integration. `GET /health` remains unchanged. At the PNX-018 baseline,
+Payment Service did not own an HTTP client and Merchant remained unaware of the
+server API. The only permitted runtime direction remains Merchant -> Payment
+Service -> Payment Server.
+
+### Payment Service-to-Server HTTP Client Foundation (PNX-019)
+
+`:apps:payment-service` owns the internal `PaymentServerClient` boundary and its
+Ktor implementation. The boundary accepts only Service/domain-owned `PaymentId`,
+`IdempotencyKey`, and `PaymentAmount` values. Service-owned HTTP DTOs and explicit
+mappers keep JSON separate from the payment domain, Android IPC contract,
+Parcelables, and server implementation classes. No new module or server project
+dependency is introduced.
+
+The implementation targets exactly `POST /v1/payments`, preserves caller-owned
+identifiers and `Long` minor units, and emits canonical TRY. A decoded success must
+echo both identifiers exactly before its explicit outcome/reason strings can map to
+`PaymentOutcome`. Unknown or contradictory values and correlation mismatches are
+protocol failures. HTTP invalid requests, unexpected status codes, decoding
+failures, protocol failures, and transport failures remain distinct from confirmed
+business outcomes; none manufactures a decline or processing-error outcome.
+
+The client owns one reusable Ktor `HttpClient` created through an explicit factory
+and closes only that owned client. Its base URL is supplied by a caller; no
+production endpoint is embedded. PNX-019 does not instantiate the client from the
+Android Service. `PaymentService.submitPayment()` continues to use the existing
+local `SyntheticPaymentProcessor`, so Binder behavior, IPC V2, Merchant correlation,
+and connection recovery remain unchanged.
+
+There is no Internet permission, runtime network configuration, retry, replay,
+timeout policy, persistence, or durable idempotency. Runtime/device/network
+integration is deferred to later Service orchestration work.
 
 ## Dependency Direction
 

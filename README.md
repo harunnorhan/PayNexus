@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, V2 asynchronous payment IPC transport, versioned Ktor Payment Server payment API, and typed Payment Service-to-Server HTTP client foundation are implemented; Android runtime verification and Service-to-Server orchestration remain pending.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, strict V3 asynchronous payment IPC contract, versioned Ktor Payment Server payment API, and typed Payment Service-to-Server HTTP client foundation are implemented; Android runtime verification and Service-to-Server orchestration remain pending.
 
 ## Documentation
 
@@ -60,7 +60,7 @@ PayNexus/
 ### Runtime Components
 
 - `apps:merchant` — Merchant-facing Android application
-- `apps:payment-service` — Headless Android bound Service exposing V2 synthetic payment transport
+- `apps:payment-service` — Headless Android bound Service exposing V3 synthetic payment transport
 - `server:*` — Kotlin/JVM payment server foundation
 
 The mandatory runtime communication path is:
@@ -156,6 +156,25 @@ continues to use the local `SyntheticPaymentProcessor`, and Merchant remains una
 of the Payment Server. No Internet permission, production endpoint, cleartext
 configuration, persistence, retry, or durable idempotency is introduced. Runtime
 Service-to-Server integration and device/network verification remain deferred.
+
+### IPC Technical Failure Contract (PNX-020)
+
+The Merchant-to-Service IPC contract is now strict V3: both `CURRENT_VERSION`
+and `MIN_SUPPORTED_VERSION` are 3, with no V2 fallback or downgrade. The existing
+Service and callback transaction positions remain stable, and the callback appends
+one new one-way technical-failure operation after `onResult` and `onRejected`.
+
+The contract now keeps three terminal meanings distinct: `onResult` carries a
+confirmed business outcome, `onRejected(INVALID_REQUEST)` reports invalid
+Merchant/IPC input, and the explicit `PAYMENT_OUTCOME_UNAVAILABLE` technical value
+reports that no confirmed business outcome can be provided. Technical uncertainty
+never becomes `PaymentOutcome`, does not prove whether remote processing occurred,
+and never triggers automatic retry or replay.
+
+Payment Service continues to use the local `SyntheticPaymentProcessor` production
+path. The PNX-019 HTTP client remains implemented but unwired. PNX-021 owns future
+Service-to-Server production integration; runtime, device, and end-to-end V3
+verification remain deferred.
 
 ### Design System Foundation
 

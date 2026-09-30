@@ -6,4 +6,6 @@ import com.paynexus.payment.contract.PaymentResultParcel;
 oneway interface IPaymentResultCallback {
     void onResult(in PaymentResultParcel result);
     void onRejected(int rejectionCode);
+    // No confirmed business outcome is available; remote processing may or may not have occurred.
+    void onTechnicalFailure(int failureCode);
 }

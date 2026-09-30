@@ -135,6 +135,8 @@ internal class AmountEntryViewModel(
 
         PaymentTransportFailure.RequestRejected -> MerchantTransportFailure.RequestRejected
 
+        PaymentTransportFailure.OutcomeUnavailable -> MerchantTransportFailure.OutcomeUnavailable
+
         PaymentTransportFailure.PermissionDenied,
         PaymentTransportFailure.WorkerUnavailable,
         -> MerchantTransportFailure.ServiceUnavailable

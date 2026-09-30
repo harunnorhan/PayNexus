@@ -42,6 +42,7 @@ internal enum class MerchantTransportFailure {
     DispatchFailed,
     ProtocolFailure,
     RequestRejected,
+    OutcomeUnavailable,
     ServiceUnavailable,
     Abandoned,
 }

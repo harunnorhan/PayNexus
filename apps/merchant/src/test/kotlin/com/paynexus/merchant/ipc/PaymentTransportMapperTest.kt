@@ -89,5 +89,13 @@ class PaymentTransportMapperTest {
         }
     }
 
+    @Test
+    fun `only the known technical code maps to outcome unavailable`() {
+        assertEquals(PaymentTransportFailure.OutcomeUnavailable, PaymentTransportMapper.technicalFailure(1))
+        for (code in listOf(Int.MIN_VALUE, -1, 0, 2, Int.MAX_VALUE)) {
+            assertEquals(PaymentTransportFailure.InvalidResult, PaymentTransportMapper.technicalFailure(code))
+        }
+    }
+
     private fun amount(units: Long) = PaymentAmount(Money(units, CurrencyCode.TRY))
 }

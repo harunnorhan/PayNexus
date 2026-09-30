@@ -28,6 +28,7 @@ internal enum class PaymentTransportFailure {
     ConnectionLost,
     InvalidResult,
     RequestRejected,
+    OutcomeUnavailable,
     PermissionDenied,
 }
 

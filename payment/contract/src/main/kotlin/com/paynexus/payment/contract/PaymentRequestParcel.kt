@@ -3,7 +3,7 @@ package com.paynexus.payment.contract
 import android.os.Parcel
 import android.os.Parcelable
 
-/** V2 wire fields only. Nullable strings remain untrusted until boundary validation. */
+/** V2/V3 wire fields. Nullable strings remain untrusted until boundary validation. */
 data class PaymentRequestParcel(
     val paymentId: String?,
     val idempotencyKey: String?,

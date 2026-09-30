@@ -296,6 +296,10 @@ private class PaymentRequests(
                             is CallbackResult.Rejected -> {
                                 if (policy.fail(token, result.failure)) publishTerminal()
                             }
+
+                            is CallbackResult.TechnicalFailure -> {
+                                if (policy.fail(token, result.failure)) publishTerminal()
+                            }
                         }
                         clear(resources)
                     }
@@ -397,6 +401,7 @@ private class PaymentRequests(
 private sealed interface CallbackResult {
     data class Result(val parcel: PaymentResultParcel?) : CallbackResult
     data class Rejected(val failure: PaymentTransportFailure) : CallbackResult
+    data class TechnicalFailure(val failure: PaymentTransportFailure) : CallbackResult
 }
 
 /** Detachment releases the client even if a remote peer retains this Binder. */
@@ -410,6 +415,11 @@ private class ResultCallback(receiver: (CallbackResult) -> Unit) : IPaymentResul
     override fun onRejected(rejectionCode: Int) {
         val failure = PaymentTransportMapper.rejection(rejectionCode)
         receiver.getAndSet(null)?.invoke(CallbackResult.Rejected(failure))
+    }
+
+    override fun onTechnicalFailure(failureCode: Int) {
+        val failure = PaymentTransportMapper.technicalFailure(failureCode)
+        receiver.getAndSet(null)?.invoke(CallbackResult.TechnicalFailure(failure))
     }
 
     fun detach() {

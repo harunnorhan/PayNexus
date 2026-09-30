@@ -233,6 +233,7 @@ private fun MerchantTransportFailure.messageResource(): Int = when (this) {
     MerchantTransportFailure.DispatchFailed -> R.string.payment_transport_dispatch_failed
     MerchantTransportFailure.ProtocolFailure -> R.string.payment_transport_protocol_failure
     MerchantTransportFailure.RequestRejected -> R.string.payment_transport_rejected
+    MerchantTransportFailure.OutcomeUnavailable -> R.string.payment_transport_outcome_unavailable
     MerchantTransportFailure.ServiceUnavailable -> R.string.payment_transport_service_unavailable
     MerchantTransportFailure.Abandoned -> R.string.payment_transport_abandoned
 }

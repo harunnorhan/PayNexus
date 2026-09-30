@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, V2 asynchronous payment IPC transport, and versioned Ktor Payment Server payment API are implemented; Android runtime verification and Service-to-Server integration remain pending.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, V2 asynchronous payment IPC transport, versioned Ktor Payment Server payment API, and typed Payment Service-to-Server HTTP client foundation are implemented; Android runtime verification and Service-to-Server orchestration remain pending.
 
 ## Documentation
 
@@ -130,11 +130,32 @@ to `APPROVED`, `DECLINED` with `UNSPECIFIED`, or `FAILED` with
 only a deterministic transport demonstration—not bank or acquirer authorization.
 
 The HTTP DTOs, boundary validation, and stateless processor are owned by
-`:server:application`; no Payment Service client or Merchant server path exists.
+`:server:application`; at the PNX-018 baseline no Payment Service client or
+Merchant server path existed.
 `idempotencyKey` is transported but not durably enforced. There is no database,
 persistence, transaction lookup, authentication, retry, or production endpoint.
 `GET /health` remains unchanged. Deterministic tests use Ktor's in-process test
 host and require no real port or external process.
+
+### Payment Service HTTP Client Foundation (PNX-019)
+
+`:apps:payment-service` now owns an internal typed Ktor client for the existing
+`POST /v1/payments` API. Its input uses `PaymentId`, `IdempotencyKey`, and
+`PaymentAmount`; separate Service-owned Kotlin serialization DTOs preserve exact
+identifiers, `Long` minor units, and canonical TRY on the JSON boundary. Responses
+must echo both identifiers exactly and use one of the three supported explicit
+outcome/reason string combinations before they can become a domain outcome.
+
+HTTP 400 invalid requests, unexpected status codes, malformed responses, invalid
+outcome combinations, identifier mismatches, and transport failures remain distinct
+from business outcomes. Deterministic Payment Service JVM tests use Ktor MockEngine
+without a server process, real socket, Android runtime, or device.
+
+The client is not wired into `PaymentService.submitPayment()`. Binder execution
+continues to use the local `SyntheticPaymentProcessor`, and Merchant remains unaware
+of the Payment Server. No Internet permission, production endpoint, cleartext
+configuration, persistence, retry, or durable idempotency is introduced. Runtime
+Service-to-Server integration and device/network verification remain deferred.
 
 ### Design System Foundation
 

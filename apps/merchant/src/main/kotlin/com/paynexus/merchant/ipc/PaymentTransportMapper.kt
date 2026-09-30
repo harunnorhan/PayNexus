@@ -33,6 +33,14 @@ internal object PaymentTransportMapper {
         PaymentTransportFailure.InvalidResult
     }
 
+    fun technicalFailure(code: Int): PaymentTransportFailure = if (
+        code == PaymentTransportValues.PAYMENT_OUTCOME_UNAVAILABLE
+    ) {
+        PaymentTransportFailure.OutcomeUnavailable
+    } else {
+        PaymentTransportFailure.InvalidResult
+    }
+
     fun result(parcel: PaymentResultParcel?): Result? {
         if (parcel == null || !PaymentTransportValues.isValidIdentifier(parcel.paymentId) ||
             !PaymentTransportValues.isValidIdentifier(parcel.idempotencyKey)

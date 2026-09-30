@@ -30,17 +30,17 @@ class PaymentConnectionPolicyTest {
     @Test
     fun `supported version establishes readiness only after acquisition`() {
         val attempt = assertNotNull(policy.start())
-        assertFalse(policy.versionReceived(attempt, 2))
+        assertFalse(policy.versionReceived(attempt, 3))
         assertEquals(State.Binding, policy.state)
         assertTrue(policy.connected(attempt))
-        assertTrue(policy.versionReceived(attempt, 2))
+        assertTrue(policy.versionReceived(attempt, 3))
         assertEquals(State.Ready, policy.state)
         assertTrue(policy.isCurrent(attempt))
     }
 
     @Test
     fun `unsupported versions remain distinct terminal outcomes`() {
-        for (version in listOf(Int.MIN_VALUE, -1, 0, 1, 3, Int.MAX_VALUE)) {
+        for (version in listOf(Int.MIN_VALUE, -1, 0, 1, 2, 4, Int.MAX_VALUE)) {
             policy.stop()
             val attempt = checking()
             assertTrue(policy.versionReceived(attempt, version))
@@ -58,7 +58,7 @@ class PaymentConnectionPolicyTest {
         assertNull(policy.start())
         policy.connected(attempt)
         assertNull(policy.start())
-        policy.versionReceived(attempt, 2)
+        policy.versionReceived(attempt, 3)
         assertNull(policy.start())
         assertTrue(policy.isCurrent(attempt))
         assertEquals(State.Ready, policy.state)
@@ -68,9 +68,9 @@ class PaymentConnectionPolicyTest {
     fun `duplicate connection and version delivery cannot restart a handshake`() {
         val attempt = checking()
         assertFalse(policy.connected(attempt))
-        policy.versionReceived(attempt, 2)
+        policy.versionReceived(attempt, 3)
         assertFalse(policy.connected(attempt))
-        assertFalse(policy.versionReceived(attempt, 3))
+        assertFalse(policy.versionReceived(attempt, 4))
         assertEquals(State.Ready, policy.state)
     }
 
@@ -95,7 +95,7 @@ class PaymentConnectionPolicyTest {
             val attempt = checking()
             assertTrue(policy.failed(attempt, failure))
             assertEquals(State.Unavailable(failure), policy.state)
-            assertFalse(policy.versionReceived(attempt, 2))
+            assertFalse(policy.versionReceived(attempt, 3))
             assertNull(policy.lost(attempt))
             assertNull(policy.start())
         }
@@ -124,7 +124,7 @@ class PaymentConnectionPolicyTest {
         val recovery = assertNotNull(policy.lost(first))
         val second = assertNotNull(policy.recover(recovery))
         assertTrue(policy.connected(second))
-        assertTrue(policy.versionReceived(second, 2))
+        assertTrue(policy.versionReceived(second, 3))
         assertEquals(State.Ready, policy.state)
         assertNull(policy.lost(second))
         assertEquals(State.Unavailable(Failure.ConnectionLost), policy.state)
@@ -170,10 +170,10 @@ class PaymentConnectionPolicyTest {
         val recovery = assertNotNull(policy.lost(old))
         val current = assertNotNull(policy.recover(recovery))
         policy.connected(current)
-        assertFalse(policy.versionReceived(old, 2))
         assertFalse(policy.versionReceived(old, 3))
+        assertFalse(policy.versionReceived(old, 4))
         assertEquals(State.CheckingCompatibility, policy.state)
-        assertTrue(policy.versionReceived(current, 2))
+        assertTrue(policy.versionReceived(current, 3))
         assertEquals(State.Ready, policy.state)
     }
 
@@ -192,8 +192,8 @@ class PaymentConnectionPolicyTest {
     fun `stop during handshake discards all late outcomes`() {
         val old = checking()
         policy.stop()
-        assertFalse(policy.versionReceived(old, 2))
         assertFalse(policy.versionReceived(old, 3))
+        assertFalse(policy.versionReceived(old, 4))
         assertFalse(policy.failed(old, Failure.VersionQueryFailed))
         assertFalse(policy.connected(old))
         assertNull(policy.lost(old))
@@ -224,7 +224,7 @@ class PaymentConnectionPolicyTest {
     @Test
     fun `new started interval can recheck an incompatible installation`() {
         val old = checking()
-        policy.versionReceived(old, 3)
+        policy.versionReceived(old, 4)
         assertNull(policy.start())
         policy.stop()
         ready()
@@ -248,6 +248,6 @@ class PaymentConnectionPolicyTest {
     }
 
     private fun ready(): PaymentConnectionPolicy.Attempt = checking().also {
-        assertTrue(policy.versionReceived(it, 2))
+        assertTrue(policy.versionReceived(it, 3))
     }
 }

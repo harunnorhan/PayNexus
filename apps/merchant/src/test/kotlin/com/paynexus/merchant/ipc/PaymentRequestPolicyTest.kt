@@ -23,7 +23,7 @@ class PaymentRequestPolicyTest {
         assertEquals(PaymentSubmissionAdmission.NotReady, policy.begin(attempt, id, key))
         connection.connected(attempt)
         assertEquals(PaymentSubmissionAdmission.NotReady, policy.begin(attempt, id, key))
-        connection.versionReceived(attempt, 2)
+        connection.versionReceived(attempt, 3)
         assertEquals(PaymentSubmissionAdmission.Accepted, policy.begin(attempt, id, key))
         assertEquals(PaymentSubmissionState.Pending(id, key), policy.state)
     }
@@ -32,7 +32,7 @@ class PaymentRequestPolicyTest {
     fun `incompatible service cannot admit payment`() {
         val attempt = assertNotNull(connection.start())
         connection.connected(attempt)
-        connection.versionReceived(attempt, 1)
+        connection.versionReceived(attempt, 2)
         assertEquals(PaymentSubmissionAdmission.NotReady, policy.begin(attempt, id, key))
         assertEquals(PaymentSubmissionState.Idle, policy.state)
     }
@@ -60,6 +60,7 @@ class PaymentRequestPolicyTest {
         val completed = policy.state
         assertFalse(policy.result(token, null))
         assertFalse(policy.fail(token, PaymentTransportFailure.DispatchFailed))
+        assertFalse(policy.fail(token, PaymentTransportFailure.OutcomeUnavailable))
         assertEquals(completed, policy.state)
     }
 
@@ -71,8 +72,31 @@ class PaymentRequestPolicyTest {
         val current = assertNotNull(policy.active)
         assertFalse(policy.result(old, result()))
         assertFalse(policy.fail(old, PaymentTransportFailure.DispatchFailed))
+        assertFalse(policy.fail(old, PaymentTransportFailure.OutcomeUnavailable))
         assertTrue(policy.isCurrent(current))
         assertTrue(policy.result(current, result()))
+    }
+
+    @Test
+    fun `technical failure wins once without creating a payment outcome`() {
+        val token = begin()
+        assertTrue(policy.fail(token, PaymentTransportFailure.OutcomeUnavailable))
+        val terminal = PaymentSubmissionState.TransportFailed(id, key, PaymentTransportFailure.OutcomeUnavailable)
+        assertEquals(terminal, policy.state)
+        assertNull(policy.active)
+        assertFalse(policy.fail(token, PaymentTransportFailure.OutcomeUnavailable))
+        assertFalse(policy.fail(token, PaymentTransportFailure.RequestRejected))
+        assertFalse(policy.result(token, result()))
+        assertEquals(terminal, policy.state)
+    }
+
+    @Test
+    fun `technical failure cannot replace an existing rejection`() {
+        val token = begin()
+        assertTrue(policy.fail(token, PaymentTransportFailure.RequestRejected))
+        val terminal = PaymentSubmissionState.TransportFailed(id, key, PaymentTransportFailure.RequestRejected)
+        assertFalse(policy.fail(token, PaymentTransportFailure.OutcomeUnavailable))
+        assertEquals(terminal, policy.state)
     }
 
     @Test
@@ -112,8 +136,10 @@ class PaymentRequestPolicyTest {
         connection.stop()
         assertEquals(PaymentSubmissionState.Abandoned(id, key), policy.state)
         assertFalse(policy.result(old, result()))
+        assertFalse(policy.fail(old, PaymentTransportFailure.OutcomeUnavailable))
         val current = begin()
         assertFalse(policy.result(old, result()))
+        assertFalse(policy.fail(old, PaymentTransportFailure.OutcomeUnavailable))
         assertTrue(policy.isCurrent(current))
     }
 
@@ -124,9 +150,10 @@ class PaymentRequestPolicyTest {
         val recovery = assertNotNull(connection.lost(old.attempt))
         val replacement = assertNotNull(connection.recover(recovery))
         connection.connected(replacement)
-        connection.versionReceived(replacement, 2)
+        connection.versionReceived(replacement, 3)
         assertNull(policy.active)
         assertFalse(policy.result(old, result()))
+        assertFalse(policy.fail(old, PaymentTransportFailure.OutcomeUnavailable))
         assertEquals(
             PaymentSubmissionState.TransportFailed(id, key, PaymentTransportFailure.ConnectionLost),
             policy.state,
@@ -154,7 +181,7 @@ class PaymentRequestPolicyTest {
 
     private fun ready(): PaymentConnectionPolicy.Attempt = assertNotNull(connection.start()).also {
         connection.connected(it)
-        connection.versionReceived(it, 2)
+        connection.versionReceived(it, 3)
     }
 
     private fun begin(): PaymentRequestPolicy.Token {

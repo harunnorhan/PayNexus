@@ -30,6 +30,7 @@
     <string name="payment_transport_dispatch_failed">The request could not be delivered reliably. The payment outcome is unknown and was not retried.</string>
     <string name="payment_transport_protocol_failure">The Service returned an invalid result. No payment outcome was created.</string>
     <string name="payment_transport_rejected">The Service rejected the request. No payment outcome was created.</string>
+    <string name="payment_transport_outcome_unavailable">The Payment Service could not provide a confirmed payment outcome. The outcome is unknown and the payment was not retried.</string>
     <string name="payment_transport_service_unavailable">The Payment Service became unavailable. No payment outcome was created.</string>
     <string name="payment_transport_abandoned">Local result waiting stopped when the screen left the foreground. The payment outcome is unknown and was not retried.</string>
     <string name="payment_new">New payment</string>

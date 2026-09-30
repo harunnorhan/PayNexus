@@ -285,6 +285,7 @@ class MerchantPaymentFlowViewModelTest {
             PaymentTransportFailure.DispatchFailed to MerchantTransportFailure.DispatchFailed,
             PaymentTransportFailure.InvalidResult to MerchantTransportFailure.ProtocolFailure,
             PaymentTransportFailure.RequestRejected to MerchantTransportFailure.RequestRejected,
+            PaymentTransportFailure.OutcomeUnavailable to MerchantTransportFailure.OutcomeUnavailable,
             PaymentTransportFailure.PermissionDenied to MerchantTransportFailure.ServiceUnavailable,
             PaymentTransportFailure.WorkerUnavailable to MerchantTransportFailure.ServiceUnavailable,
         )

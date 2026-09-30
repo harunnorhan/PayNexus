@@ -20,10 +20,12 @@ PNX-017 adds a deterministic Ktor in-process test for the Payment Server health
 foundation. PNX-018 adds deterministic in-process request, validation, outcome,
 error-contract, and health-regression tests for the versioned Payment Server API.
 PNX-019 adds deterministic Payment Service JVM tests for its typed HTTP client with
-Ktor MockEngine. Automated IPC integration, persistence, live Service-to-Server
-transport, and end-to-end test infrastructure remain future work. PNX-011 through
-PNX-018 sections below preserve historical procedures and evidence; they do not
-establish PNX-019 verification.
+Ktor MockEngine. PNX-020 upgrades the IPC contract to strict V3 and adds deterministic
+contract and Merchant tests for a distinct technical outcome-unavailable terminal.
+Automated IPC integration, persistence, live Service-to-Server transport, and
+end-to-end test infrastructure remain future work. PNX-011 through PNX-019 sections
+below preserve historical procedures and evidence; they do not establish PNX-020
+verification.
 
 ## Philosophy and Naming
 
@@ -386,6 +388,79 @@ Runtime/device/manual-network verification is intentionally deferred. No real
 Payment Server process, socket, browser, curl, adb, emulator, device, persistence,
 retry, or durable idempotency belongs to PNX-019. Remote CI remains separate
 evidence after later authorized commit, push, and Pull Request work.
+
+## IPC Technical Failure Contract Verification (PNX-020)
+
+PNX-020 upgrades Merchant and Payment Service to strict IPC V3 without wiring the
+PNX-019 client into Binder execution. Contract tests require both version bounds to
+equal 3, accept only V3, reject old/future/negative versions, lock existing and new
+integer wire values, and lock the generated Service and callback transaction order.
+Generated-source inspection must also confirm all callback operations remain
+one-way and the new technical callback is appended at offset 2. Existing Parcelable
+layouts and malformed/truncated-field protections remain unchanged.
+
+Merchant JVM tests cover known and unknown technical wire values, the unchanged
+invalid-request rejection meaning, active and stale token ownership, duplicate and
+cross-category terminal delivery, reused identifiers, stop abandonment, and
+connection recovery without replay. ViewModel coverage verifies that outcome
+unavailability uses the existing transport-failure presentation and never creates
+a `PaymentOutcome`. Existing Payment Service tests continue to cover IPC request
+mapping and all local synthetic outcomes; PNX-019 MockEngine tests remain unchanged.
+
+Use JDK 17 and SDK Platform 37 from the repository root:
+
+```bash
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew :apps:payment-service:test --rerun-tasks
+./gradlew :apps:merchant:test --rerun-tasks
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :apps:merchant:assembleDebug
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+git diff --check
+```
+
+Inspect XML/HTML reports for exact counts and results. Inspect generated AIDL for
+unchanged Service offsets 0/1, callback offsets 0/1/2, and one-way callback flags.
+Inspect source, dependency graphs, and merged manifests for unchanged synthetic
+Service execution, the unwired PNX-019 client, absence of Merchant networking and
+Internet permission, and absence of retry/replay, persistence, endpoints, cleartext
+configuration, sensitive data, and floating-point money. Runtime/device/manual and
+end-to-end verification remain deferred. Remote CI remains separate evidence after
+authorized Git and Pull Request work.
+
+### PNX-020 Local Non-Runtime Verification Record
+
+On 2026-09-30, Codex completed the approved local non-runtime verification on
+`feature/PNX-020-ipc-technical-failure-contract`:
+
+- fresh focused JVM runs passed for payment contract (14 tests), Payment Service
+  (26), and Merchant (119), with zero failures, errors, or skips;
+- Payment Service and Merchant debug assembly passed against the generated V3
+  contract;
+- final `spotlessCheck`, `detekt`, `qualityCheck`, and repository `build` passed;
+  `qualityCheck` reported 186 actionable tasks and `build` reported 421;
+- generated debug/release AIDL retained Service transaction offsets 0/1, retained
+  callback offsets 0/1, appended `onTechnicalFailure` at offset 2, and used
+  `FLAG_ONEWAY` for all callback methods;
+- contract tests locked both version bounds to 3, all existing integer wire values,
+  the new outcome-unavailable value, and unchanged transaction positions;
+- source and diff review confirmed unchanged Parcelable fields/order, unchanged
+  Payment Service synthetic execution, unchanged PNX-019 client code, no server or
+  Gradle dependency change, and no retry/replay or payment-domain outcome expansion;
+  and
+- dependency and merged-manifest inspection found no Merchant HTTP dependency,
+  Internet permission, cleartext policy, Network Security Config, or endpoint.
+
+An initial `spotlessCheck` found one layout-only violation in the new Merchant
+technical-code mapper. The source was reformatted and the focused and repository
+Spotless checks then passed without changing any quality rule or suppression.
+
+No runtime, device, emulator, adb, browser, curl, real network, real Payment Server,
+manual IPC, or end-to-end verification was performed. No commit, stage, push, Pull
+Request, merge, GitHub setting, issue, or remote CI state was created or changed.
 
 ## IPC Contract Foundation Verification
 

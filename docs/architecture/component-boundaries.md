@@ -187,6 +187,32 @@ There is no Internet permission, runtime network configuration, retry, replay,
 timeout policy, persistence, or durable idempotency. Runtime/device/network
 integration is deferred to later Service orchestration work.
 
+### IPC Technical Failure Contract (PNX-020)
+
+`:payment:contract`, Merchant, and Payment Service now use strict IPC V3 with both
+version bounds set to 3. The Service transaction order remains version query then
+one-way submission. The per-request one-way callback preserves `onResult` and
+`onRejected` at their existing positions and appends `onTechnicalFailure`.
+
+The three callback categories have separate semantics. `onResult` carries a
+confirmed `PaymentOutcome`; `onRejected(INVALID_REQUEST)` remains reserved for an
+invalid Merchant/IPC request; and `onTechnicalFailure(PAYMENT_OUTCOME_UNAVAILABLE)`
+means the Service cannot provide a confirmed business outcome. The technical value
+does not prove whether downstream processing occurred and never becomes a decline
+or `PaymentOutcome.Failed`. Unknown technical codes remain protocol failures.
+
+Merchant routes the technical terminal through its existing request token,
+connection ownership, and first-terminal-wins callback receiver. Stale and
+duplicate events remain ignored, stop/close still abandons local ownership, and
+connection recovery never replays a payment. The existing transport-failure UI
+reports a neutral unknown outcome without introducing a payment result.
+
+Payment Service still executes the local `SyntheticPaymentProcessor`; PNX-019's
+typed HTTP client remains unwired. PNX-020 introduces no networking, permission,
+endpoint, persistence, retry, or durable idempotency behavior. PNX-021 owns future
+Service-to-Server production integration. Runtime/device/end-to-end verification
+remains deferred.
+
 ## Dependency Direction
 
 The intended dependency direction is:

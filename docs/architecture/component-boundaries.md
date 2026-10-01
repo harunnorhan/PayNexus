@@ -213,6 +213,42 @@ endpoint, persistence, retry, or durable idempotency behavior. PNX-021 owns futu
 Service-to-Server production integration. Runtime/device/end-to-end verification
 remains deferred.
 
+### Payment Service-to-Server Integration (PNX-021)
+
+`:apps:payment-service` now connects validated V3 Binder requests to its existing
+internal `PaymentServerClient`. `PaymentExecutionCoordinator` owns a bounded
+single-worker executor with one queued request, exact domain-to-client request
+construction, one client invocation per admitted request, terminal mapping,
+callback ownership, and shutdown. `PaymentService` owns coordinator creation and
+destruction and creates at most one reusable `KtorPaymentServerClient` for its
+lifetime. No HTTP work runs on a Binder transaction thread.
+
+Invalid IPC input remains `onRejected(INVALID_REQUEST)`. Only a confirmed
+`PaymentServerCallResult.Completed` becomes an IPC result through the existing
+`PaymentTransportMapper`. Every unsuccessful client result, missing configured
+client, unexpected non-cancellation execution failure, or worker-admission
+rejection uses `onTechnicalFailure(PAYMENT_OUTCOME_UNAVAILABLE)`. Callback
+ownership is consumed before one terminal attempt; callback failure does not
+change category or replay work.
+
+Payment ID, idempotency key, and `PaymentAmount` domain objects pass into the
+client unchanged. Money remains positive `Long` minor units with explicit TRY.
+The Service performs no automatic retry, replay, durable queuing, persistence, or
+durable idempotency enforcement.
+
+Debug builds alone configure `http://10.0.2.2:8080` and a Network Security Config
+that denies general cleartext while allowing the emulator host. Release has no
+endpoint and constructs no HTTP client, so valid requests fail closed through the
+V3 technical terminal. `INTERNET` belongs only to Payment Service; Merchant remains
+free of endpoints, HTTP dependencies, server DTOs, and network permission. The
+server API and server-side synthetic processor are unchanged.
+
+Service shutdown stops admission, detaches active and queued callback ownership,
+removes queued work, interrupts the worker, and closes the reusable client without
+waiting indefinitely on Android main. Local interruption or client closure does
+not prove that the Payment Server did not receive or process an active request.
+Runtime/device/end-to-end verification remains deferred.
+
 ## Dependency Direction
 
 The intended dependency direction is:

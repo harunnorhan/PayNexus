@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, strict V3 asynchronous payment IPC contract, versioned Ktor Payment Server payment API, and typed Payment Service-to-Server HTTP client foundation are implemented; Android runtime verification and Service-to-Server orchestration remain pending.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, strict V3 asynchronous payment IPC contract, versioned Ktor Payment Server payment API, and bounded Payment Service-to-Server orchestration are implemented; Android runtime and end-to-end verification remain pending.
 
 ## Documentation
 
@@ -60,7 +60,7 @@ PayNexus/
 ### Runtime Components
 
 - `apps:merchant` — Merchant-facing Android application
-- `apps:payment-service` — Headless Android bound Service exposing V3 synthetic payment transport
+- `apps:payment-service` — Headless Android bound Service orchestrating V3 payments through the Payment Server client
 - `server:*` — Kotlin/JVM payment server foundation
 
 The mandatory runtime communication path is:
@@ -175,6 +175,34 @@ Payment Service continues to use the local `SyntheticPaymentProcessor` productio
 path. The PNX-019 HTTP client remains implemented but unwired. PNX-021 owns future
 Service-to-Server production integration; runtime, device, and end-to-end V3
 verification remain deferred.
+
+### Payment Service-to-Server Integration (PNX-021)
+
+The Payment Service production path now connects accepted V3 Binder requests to
+the existing typed `PaymentServerClient`. IPC validation remains synchronous and
+bounded, while all client submission work runs on a Service-owned executor with
+one worker and a queue capacity of one. Saturation is observable through the V3
+technical-failure callback; it never runs HTTP on a Binder thread and never retries,
+requeues, or replays a payment.
+
+The Service creates at most one reusable `KtorPaymentServerClient` for its lifetime.
+Confirmed server outcomes continue through the existing `PaymentTransportMapper`
+and `onResult`; downstream, protocol, correlation, transport, unavailable-client,
+and worker-admission failures use
+`onTechnicalFailure(PAYMENT_OUTCOME_UNAVAILABLE)`. Invalid IPC input alone uses
+`onRejected(INVALID_REQUEST)`. Exact identifiers and positive `Long` minor units
+are preserved across both boundaries.
+
+Debug builds use the development-only emulator endpoint
+`http://10.0.2.2:8080`. Cleartext is denied generally and allowed only for that
+debug emulator host. Release builds intentionally configure no endpoint and fail
+closed without constructing an HTTP client. Merchant has no server endpoint,
+network dependency, or Internet permission.
+
+The Service-local synthetic processor has been removed; the server retains its
+stateless synthetic demonstration. There is still no persistence, durable
+idempotency, automatic retry/replay, or remote-cancellation guarantee. Runtime,
+device, manual-network, and end-to-end verification remain deferred.
 
 ### Design System Foundation
 

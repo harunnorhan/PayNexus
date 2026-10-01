@@ -11,8 +11,10 @@ internal data class PaymentServerRequest(
     val amount: PaymentAmount,
 )
 
-internal fun interface PaymentServerClient {
+internal fun interface PaymentServerClient : AutoCloseable {
     suspend fun submit(request: PaymentServerRequest): PaymentServerCallResult
+
+    override fun close() = Unit
 }
 
 internal sealed interface PaymentServerCallResult {

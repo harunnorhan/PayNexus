@@ -30,3 +30,6 @@ Thumbs.db
 # Temporary
 tmp/
 temp/
+
+# Local Payment Server data
+/data/

@@ -1,5 +1,8 @@
 package com.paynexus.server.application.payment
 
+import com.paynexus.server.domain.payment.AcceptedPaymentRequest
+import com.paynexus.server.domain.payment.PaymentProcessingResult
+import com.paynexus.server.domain.payment.StoredPaymentRecord
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -33,8 +36,10 @@ internal data class PaymentErrorDto(
 )
 
 internal val invalidPaymentRequestResponse = PaymentErrorDto(error = INVALID_REQUEST)
+internal val internalServerErrorResponse = PaymentErrorDto(error = INTERNAL_ERROR)
+private val idempotencyConflictResponse = PaymentErrorDto(error = IDEMPOTENCY_CONFLICT)
 
-internal fun Route.paymentRoutes() {
+internal fun Route.paymentRoutes(processPayment: suspend (AcceptedPaymentRequest) -> PaymentProcessingResult) {
     route("/v1") {
         post("/payments") {
             val requestDto = call.receive<PaymentRequestDto>()
@@ -50,10 +55,19 @@ internal fun Route.paymentRoutes() {
                 return@post
             }
 
-            call.respond(
-                status = HttpStatusCode.OK,
-                message = SyntheticPaymentProcessor.process(request).toResponse(request),
-            )
+            when (val result = processPayment(request)) {
+                is PaymentProcessingResult.Created -> {
+                    call.respondPayment(result.record)
+                }
+
+                is PaymentProcessingResult.Replayed -> {
+                    call.respondPayment(result.record)
+                }
+
+                PaymentProcessingResult.Conflict -> {
+                    call.respond(HttpStatusCode.Conflict, idempotencyConflictResponse)
+                }
+            }
         }
     }
 }
@@ -63,24 +77,19 @@ private fun JsonElement?.strictLongOrNull(): Long? {
     return if (primitive == null || primitive.isString) null else primitive.longOrNull
 }
 
-private fun SyntheticPaymentOutcome.toResponse(request: AcceptedPaymentRequest): PaymentResponseDto {
-    val (outcome, reason) =
-        when (this) {
-            SyntheticPaymentOutcome.Approved -> APPROVED to null
-            SyntheticPaymentOutcome.Declined -> DECLINED to UNSPECIFIED
-            SyntheticPaymentOutcome.Failed -> FAILED to PROCESSING_ERROR
-        }
-    return PaymentResponseDto(
-        paymentId = request.paymentId,
-        idempotencyKey = request.idempotencyKey,
-        outcome = outcome,
-        reason = reason,
+private suspend fun io.ktor.server.application.ApplicationCall.respondPayment(record: StoredPaymentRecord) {
+    respond(
+        status = HttpStatusCode.OK,
+        message =
+            PaymentResponseDto(
+                paymentId = record.request.intent.paymentId,
+                idempotencyKey = record.request.idempotencyKey,
+                outcome = record.outcome.name,
+                reason = record.outcome.reason?.name,
+            ),
     )
 }
 
-private const val APPROVED = "APPROVED"
-private const val DECLINED = "DECLINED"
-private const val FAILED = "FAILED"
-private const val UNSPECIFIED = "UNSPECIFIED"
-private const val PROCESSING_ERROR = "PROCESSING_ERROR"
 private const val INVALID_REQUEST = "INVALID_REQUEST"
+private const val IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
+private const val INTERNAL_ERROR = "INTERNAL_ERROR"

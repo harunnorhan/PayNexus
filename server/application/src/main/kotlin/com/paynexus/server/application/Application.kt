@@ -1,7 +1,13 @@
 package com.paynexus.server.application
 
+import com.paynexus.server.application.payment.internalServerErrorResponse
 import com.paynexus.server.application.payment.invalidPaymentRequestResponse
 import com.paynexus.server.application.payment.paymentRoutes
+import com.paynexus.server.domain.payment.AcceptedPaymentRequest
+import com.paynexus.server.domain.payment.IdempotentPaymentProcessor
+import com.paynexus.server.domain.payment.PaymentProcessingResult
+import com.paynexus.server.domain.payment.PaymentRepositoryException
+import com.paynexus.server.infrastructure.persistence.SqlitePaymentRepository
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -18,8 +24,12 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import java.nio.file.InvalidPathException
+import java.nio.file.Path
 
 fun main() {
     embeddedServer(
@@ -31,6 +41,16 @@ fun main() {
 }
 
 fun Application.module() {
+    val repository = SqlitePaymentRepository(resolvePaymentDatabasePath(System.getenv()))
+    val processor = IdempotentPaymentProcessor(repository)
+    module { request ->
+        withContext(Dispatchers.IO) {
+            processor.process(request)
+        }
+    }
+}
+
+internal fun Application.module(processPayment: suspend (AcceptedPaymentRequest) -> PaymentProcessingResult) {
     install(ContentNegotiation) {
         json(
             Json {
@@ -51,6 +71,9 @@ fun Application.module() {
         exception<SerializationException> { call, _ ->
             call.respond(HttpStatusCode.BadRequest, invalidPaymentRequestResponse)
         }
+        exception<PaymentRepositoryException> { call, _ ->
+            call.respond(HttpStatusCode.InternalServerError, internalServerErrorResponse)
+        }
     }
     routing {
         get("/health") {
@@ -60,9 +83,26 @@ fun Application.module() {
                 status = HttpStatusCode.OK,
             )
         }
-        paymentRoutes()
+        paymentRoutes(processPayment)
+    }
+}
+
+internal fun resolvePaymentDatabasePath(environment: Map<String, String>): Path {
+    val configuredPath = environment[PAYMENT_DATABASE_PATH_ENVIRONMENT_VARIABLE]
+    val pathValue =
+        when {
+            configuredPath == null -> DEFAULT_PAYMENT_DATABASE_PATH
+            configuredPath.isBlank() -> error("Payment database path must not be blank.")
+            else -> configuredPath
+        }
+    return try {
+        Path.of(pathValue)
+    } catch (_: InvalidPathException) {
+        error("Payment database path is invalid.")
     }
 }
 
 private const val HEALTH_RESPONSE = "{\"status\":\"ok\",\"service\":\"paynexus-payment-server\"}"
 private val HEALTH_CONTENT_TYPE = ContentType.parse("application/json; charset=UTF-8")
+private const val PAYMENT_DATABASE_PATH_ENVIRONMENT_VARIABLE = "PAYNEXUS_PAYMENT_DB_PATH"
+private const val DEFAULT_PAYMENT_DATABASE_PATH = "./data/paynexus-payments.db"

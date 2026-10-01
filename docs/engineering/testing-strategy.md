@@ -22,10 +22,12 @@ error-contract, and health-regression tests for the versioned Payment Server API
 PNX-019 adds deterministic Payment Service JVM tests for its typed HTTP client with
 Ktor MockEngine. PNX-020 upgrades the IPC contract to strict V3 and adds deterministic
 contract and Merchant tests for a distinct technical outcome-unavailable terminal.
-Automated IPC integration, persistence, live Service-to-Server transport, and
-end-to-end test infrastructure remain future work. PNX-011 through PNX-019 sections
-below preserve historical procedures and evidence; they do not establish PNX-020
-verification.
+PNX-021 adds deterministic Payment Service orchestration tests for bounded admission,
+exact request propagation, terminal mapping, callback ownership, and shutdown.
+Automated IPC integration, persistence, live Android Service-to-Server transport,
+and end-to-end test infrastructure remain future work. PNX-011 through PNX-020
+sections below preserve historical procedures and evidence; they do not establish
+PNX-021 verification.
 
 ## Philosophy and Naming
 
@@ -461,6 +463,100 @@ Spotless checks then passed without changing any quality rule or suppression.
 No runtime, device, emulator, adb, browser, curl, real network, real Payment Server,
 manual IPC, or end-to-end verification was performed. No commit, stage, push, Pull
 Request, merge, GitHub setting, issue, or remote CI state was created or changed.
+
+## Payment Service-to-Server Integration Verification (PNX-021)
+
+PNX-021 tests the production-responsibility `PaymentExecutionCoordinator` on the
+JVM with handwritten clients, atomic counters, and deterministic latches. Tests
+cover exact mixed/padded identifiers, positive `Long` values including
+`Long.MAX_VALUE`, one reusable client, all three confirmed outcomes, invalid IPC
+input, every PNX-019 unsuccessful failure family, unexpected execution failure,
+coroutine cancellation, fail-closed missing configuration, and callback
+`RemoteException` for result, rejection, and technical terminals.
+
+Concurrency tests hold the single worker deterministically, fill the one-item
+queue, and reject a third request. They verify that rejected work never reaches
+the client, does not use caller-runs behavior, receives one technical callback
+attempt, and is never resubmitted. Shutdown tests detach active and queued callback
+ownership, prevent queued execution, reject later work, close the client once, and
+allow no late deliberate callback. These tests use no sleeps, socket, server
+process, Android runtime, or coroutine-test dependency.
+
+Use JDK 17 and SDK Platform 37 from the repository root:
+
+```bash
+./gradlew :apps:payment-service:test --rerun-tasks
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :apps:payment-service:assembleRelease
+./gradlew :apps:payment-service:lint
+./gradlew :apps:merchant:test --rerun-tasks
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew :payment:domain:test --rerun-tasks
+./gradlew :server:application:test --rerun-tasks
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :apps:payment-service:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+```
+
+Inspect all XML/HTML test reports for exact methods, failures, errors, skips, and
+execution state. Inspect debug/release Payment Service merged manifests and
+BuildConfig output, Merchant merged manifests, generated AIDL, dependency graphs,
+and source/diff state. Confirm Service-only Internet permission, debug-only narrow
+cleartext, empty release endpoint, unchanged V3 transactions/wire/Parcel layouts,
+unchanged Merchant and server production code, no retry/replay, no floating-point
+money, no sensitive logging or secrets, and no quality/test/CI weakening.
+
+The debug endpoint `http://10.0.2.2:8080` is development-only. Release remains
+unconfigured and fails closed without constructing an HTTP client. Executor
+interruption, coroutine cancellation, and `HttpClient.close()` are local signals;
+they do not establish that the server did not receive or process an active request.
+There is no persistence or durable idempotency. Runtime/device/manual-network and
+end-to-end verification remain deferred, and remote CI requires later authorized
+Git and Pull Request work.
+
+### PNX-021 Local Verification Record
+
+On 2026-10-01, Codex completed the approved local, non-runtime verification scope
+on `feature/PNX-021-payment-service-server-integration`:
+
+- a fresh Payment Service test run executed 35 tests (12 coordinator, 13 Ktor
+  client, 6 transport-mapper, and 4 response-mapper tests) with zero failures,
+  errors, or skips;
+- fresh regression runs executed 119 Merchant, 14 contract, 26 payment-domain,
+  and 15 server-application tests with zero failures, errors, or skips;
+- Payment Service debug/release assembly and lint passed, as did repository
+  `spotlessCheck`, `detekt`, `qualityCheck`, and `build`; the full build completed
+  425 actionable tasks (93 executed, 23 from cache, and 309 up-to-date);
+- debug/release dependency reports resolved the explicit coroutines 1.11.0
+  dependency and the existing Ktor client stack, with no server implementation
+  project dependency; Merchant dependency inspection found no Ktor client;
+- generated debug/release `BuildConfig` values were respectively
+  `http://10.0.2.2:8080` and empty; merged manifests put `INTERNET` only in Payment
+  Service, referenced the narrow Network Security Config only in debug, and left
+  Merchant without Internet permission or network-security configuration;
+- generated AIDL retained Service transaction offsets 0/1 and callback offsets
+  0/1/2, with submission and all callbacks one-way; contract source/diff inspection
+  found no wire-constant or Parcelable-layout change; and
+- final source/diff inspection found no Merchant or Payment Server production
+  change, floating-point money, automatic retry/replay, payment payload logging,
+  secrets, trust-all TLS, unrestricted cleartext, suppression, baseline, test
+  weakening, or CI configuration change. `git diff --check` passed.
+
+The initial focused compilation exposed a test assertion type-inference issue, and
+the next run exposed a worker-name assertion that did not account for coroutine
+debug metadata; both tests were corrected before the fresh passing run. The first
+repository `spotlessCheck` found formatting-only differences in the new Service
+orchestration sources; scoped Spotless formatting was applied and the final check
+passed. No quality rule or production behavior was weakened.
+
+Runtime, device, emulator, adb, manual network, real-server, socket, browser, curl,
+and end-to-end verification were not performed and remain **DEFERRED**. Remote CI
+was **NOT RUN**. No staging, commit, push, Pull Request, merge, or GitHub setting
+change was performed.
 
 ## IPC Contract Foundation Verification
 

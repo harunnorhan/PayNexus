@@ -5,6 +5,7 @@ spotless = "8.10.2"
 ktlint = "1.8.0"
 detekt = "2.0.0-alpha.6"
 ktor = "3.6.0"
+kotlinx-coroutines = "1.11.0"
 
 compose-bom = "2026.09.00"
 androidx-activity = "1.13.0"
@@ -30,6 +31,7 @@ ktor-client-android = { module = "io.ktor:ktor-client-android", version.ref = "k
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 compose-runtime = { module = "androidx.compose.runtime:runtime" }

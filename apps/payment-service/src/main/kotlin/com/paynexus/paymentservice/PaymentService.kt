@@ -3,16 +3,20 @@ package com.paynexus.paymentservice
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
-import android.os.RemoteException
 import com.paynexus.payment.contract.IPaymentResultCallback
 import com.paynexus.payment.contract.IPaymentService
 import com.paynexus.payment.contract.PaymentIpcContract
 import com.paynexus.payment.contract.PaymentRequestParcel
 import com.paynexus.payment.contract.PaymentTransportValues
-import com.paynexus.paymentservice.ipc.PaymentTransportMapper
-import com.paynexus.paymentservice.ipc.SyntheticPaymentProcessor
+import com.paynexus.paymentservice.ipc.PaymentExecutionCoordinator
+import com.paynexus.paymentservice.ipc.PaymentExecutionTerminal
+import com.paynexus.paymentservice.ipc.PaymentTerminalCallback
+import com.paynexus.paymentservice.paymentserver.KtorPaymentServerClient
+import com.paynexus.paymentservice.paymentserver.PaymentServerClient
+import io.ktor.http.Url
 
 class PaymentService : Service() {
+    private lateinit var coordinator: PaymentExecutionCoordinator
     private val binder =
         object : IPaymentService.Stub() {
             override fun getContractVersion(): Int = PaymentIpcContract.CURRENT_VERSION
@@ -22,19 +26,49 @@ class PaymentService : Service() {
                 callback: IPaymentResultCallback?,
             ) {
                 if (callback == null) return
-                val validated = PaymentTransportMapper.request(request)
-                try {
-                    if (validated == null) {
-                        callback.onRejected(PaymentTransportValues.INVALID_REQUEST)
-                    } else {
-                        val outcome = SyntheticPaymentProcessor.outcome(validated.amount)
-                        callback.onResult(PaymentTransportMapper.result(validated, outcome))
-                    }
-                } catch (_: RemoteException) {
-                    // One delivery attempt only; caller loss does not change the synthetic outcome.
-                }
+                coordinator.submit(
+                    request,
+                    PaymentTerminalCallback { terminal ->
+                        when (terminal) {
+                            is PaymentExecutionTerminal.Result -> {
+                                callback.onResult(terminal.parcel)
+                            }
+
+                            PaymentExecutionTerminal.Rejected -> {
+                                callback.onRejected(PaymentTransportValues.INVALID_REQUEST)
+                            }
+
+                            PaymentExecutionTerminal.TechnicalFailure -> {
+                                callback.onTechnicalFailure(PaymentTransportValues.PAYMENT_OUTCOME_UNAVAILABLE)
+                            }
+                        }
+                    },
+                )
             }
         }
 
+    override fun onCreate() {
+        super.onCreate()
+        coordinator = PaymentExecutionCoordinator(createPaymentServerClient())
+    }
+
     override fun onBind(intent: Intent?): IBinder = binder
+
+    override fun onDestroy() {
+        try {
+            if (::coordinator.isInitialized) coordinator.shutdown()
+        } finally {
+            super.onDestroy()
+        }
+    }
+
+    private fun createPaymentServerClient(): PaymentServerClient? {
+        val endpoint = BuildConfig.PAYMENT_SERVER_BASE_URL
+        if (endpoint.isBlank()) return null
+        return try {
+            KtorPaymentServerClient.create(Url(endpoint))
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

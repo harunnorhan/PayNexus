@@ -204,6 +204,34 @@ stateless synthetic demonstration. There is still no persistence, durable
 idempotency, automatic retry/replay, or remote-cancellation guarantee. Runtime,
 device, manual-network, and end-to-end verification remain deferred.
 
+### Payment Server Persistence and Durable Idempotency (PNX-022)
+
+The Payment Server now stores accepted synthetic payment records in a local
+SQLite database through JDBC. `:server:domain` owns the framework-independent
+payment intent, deterministic outcome policy, repository port, and replay/conflict
+decision. `:server:infrastructure` owns schema bootstrap, parameterized SQL,
+connection lifecycle, and database-enforced uniqueness. `:server:application`
+owns HTTP validation, configuration, composition, blocking-IO dispatch, and
+sanitized status mapping.
+
+The database path is read from `PAYNEXUS_PAYMENT_DB_PATH`. When the variable is
+absent, local development uses `./data/paynexus-payments.db`; an explicitly blank
+value fails application initialization. Schema initialization must succeed before
+routes become available, and there is no stateless fallback.
+
+The first accepted idempotency key stores one authoritative response. Repeating
+the same key with the same exact payment ID, `Long` minor-unit amount, and canonical
+currency replays that response, including after reconstruction against the same
+database file. Reusing the key for a different accepted intent returns HTTP 409
+with `{"error":"IDEMPOTENCY_CONFLICT"}` and never changes the original row.
+Existing HTTP 200 and HTTP 400 response contracts remain unchanged.
+
+This is local, single-process API-level idempotency for the deterministic synthetic
+processor. It is not distributed idempotency, a production database guarantee, or
+exactly-once execution of future bank/acquirer side effects. No transaction lookup,
+Payment Service retry/replay, or Android behavior is added. Runtime/manual
+end-to-end verification remains deferred.
+
 ### Design System Foundation
 
 `design-system` provides the provisional Compose theme, compact spacing tokens,

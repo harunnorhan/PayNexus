@@ -2,7 +2,10 @@ plugins {
     id("paynexus.kotlin.jvm.library")
 }
 
+base {
+    archivesName.set("paynexus-server-domain")
+}
+
 dependencies {
-    implementation(project(":core:model"))
-    implementation(project(":payment:domain"))
+    testImplementation(libs.kotlin.test.junit)
 }

@@ -24,10 +24,11 @@ Ktor MockEngine. PNX-020 upgrades the IPC contract to strict V3 and adds determi
 contract and Merchant tests for a distinct technical outcome-unavailable terminal.
 PNX-021 adds deterministic Payment Service orchestration tests for bounded admission,
 exact request propagation, terminal mapping, callback ownership, and shutdown.
-Automated IPC integration, persistence, live Android Service-to-Server transport,
-and end-to-end test infrastructure remain future work. PNX-011 through PNX-020
-sections below preserve historical procedures and evidence; they do not establish
-PNX-021 verification.
+PNX-022 adds pure server-domain idempotency tests, file-backed SQLite integration
+tests, and Ktor replay/conflict/internal-error tests. Automated IPC integration,
+live Android Service-to-Server transport, and end-to-end test infrastructure remain
+future work. PNX-011 through PNX-021 sections below preserve historical procedures
+and evidence; they do not establish PNX-022 verification.
 
 ## Philosophy and Naming
 
@@ -557,6 +558,57 @@ Runtime, device, emulator, adb, manual network, real-server, socket, browser, cu
 and end-to-end verification were not performed and remain **DEFERRED**. Remote CI
 was **NOT RUN**. No staging, commit, push, Pull Request, merge, or GitHub setting
 change was performed.
+
+## Payment Server Persistence and Durable Idempotency Verification (PNX-022)
+
+PNX-022 uses three focused JVM layers. `:server:domain` tests the deterministic
+outcome and created/replayed/conflict policy with handwritten repositories.
+`:server:infrastructure` uses real temporary file-backed SQLite databases for
+schema, exact-value, restart, corruption, lock-failure, and deterministic concurrent
+same-key coverage. `:server:application` uses Ktor `testApplication` with an
+injected processor and handwritten repository, preserving all strict PNX-018 JSON
+tests while adding exact HTTP 200/409/500 behavior.
+
+The infrastructure concurrency tests use barriers and a bounded executor rather
+than sleeps. Restart evidence reconstructs the repository against the same temporary
+database file. Tests close JDBC and executor resources and remove temporary files.
+An in-memory database is not used as durability evidence.
+
+Use JDK 17 and the committed Gradle Wrapper from the repository root:
+
+```bash
+./gradlew :server:domain:test --rerun-tasks
+./gradlew :server:infrastructure:test --rerun-tasks
+./gradlew :server:application:test --rerun-tasks
+./gradlew :server:domain:build
+./gradlew :server:infrastructure:build
+./gradlew :server:application:build
+./gradlew :server:application:startScripts
+./gradlew :server:application:installDist
+./gradlew :server:application:distZip
+./gradlew :server:application:distTar
+./gradlew :server:domain:dependencies --configuration runtimeClasspath
+./gradlew :server:infrastructure:dependencies --configuration runtimeClasspath
+./gradlew :server:application:dependencies --configuration runtimeClasspath
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+git diff --check
+```
+
+Inspect XML/HTML reports for exact test counts and execution state. Inspect all
+three runtime graphs, generated start scripts, `installDist`, ZIP, and TAR contents
+for the intended module direction, SQLite JDBC, unique project JAR basenames, and
+absence of Android dependencies. Check temporary database cleanup, exact response
+bodies, absence of generated repository-local database files, integer-only money,
+sanitized errors, sensitive logging, secrets, and quality/CI weakening.
+
+These tests establish local API-level durability for the deterministic synthetic
+processor. They do not establish multi-node coordination, distributed idempotency,
+production database durability, exactly-once external financial execution, Android
+retry/replay, or transaction lookup. Runtime/manual end-to-end verification remains
+deferred, and remote CI requires later authorized Git and Pull Request work.
 
 ## IPC Contract Foundation Verification
 

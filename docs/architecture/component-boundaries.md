@@ -249,6 +249,33 @@ waiting indefinitely on Android main. Local interruption or client closure does
 not prove that the Payment Server did not receive or process an active request.
 Runtime/device/end-to-end verification remains deferred.
 
+### Payment Server Persistence and Durable Idempotency (PNX-022)
+
+`:server:application` now depends on `:server:domain` and
+`:server:infrastructure` for Payment Server composition. It continues to own Ktor,
+strict HTTP/JSON validation, DTO mapping, database-path configuration, blocking-IO
+dispatch, and sanitized HTTP error responses.
+
+`:server:domain` owns the framework-independent accepted payment intent,
+deterministic synthetic outcome rule, stored-record model, purpose-specific
+repository port, and created/replayed/conflict policy. It has no project, Ktor,
+JDBC, SQLite, or Android dependency.
+
+`:server:infrastructure` implements the repository port with SQLite/JDBC. It owns
+parent-directory creation, schema bootstrap, connection-per-operation resource
+management, a bounded SQLite lock wait, parameterized insert/read statements, and
+mapping of durable rows back into validated server-domain records. It depends only
+on `:server:domain` among PayNexus projects and no longer depends on
+`:server:application`.
+
+The database primary key is the final authority for idempotency-key uniqueness.
+The first accepted intent and outcome remain authoritative; equivalent requests
+replay the stored record, while a different intent receives HTTP 409 without an
+update. This provides local, single-process durability for the current synthetic
+processor only. It does not provide distributed idempotency or exactly-once future
+external financial execution. Transaction lookup and Android retry/replay remain
+outside this boundary.
+
 ## Dependency Direction
 
 The intended dependency direction is:

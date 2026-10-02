@@ -26,9 +26,12 @@ PNX-021 adds deterministic Payment Service orchestration tests for bounded admis
 exact request propagation, terminal mapping, callback ownership, and shutdown.
 PNX-022 adds pure server-domain idempotency tests, file-backed SQLite integration
 tests, and Ktor replay/conflict/internal-error tests. Automated IPC integration,
-live Android Service-to-Server transport, and end-to-end test infrastructure remain
-future work. PNX-011 through PNX-021 sections below preserve historical procedures
-and evidence; they do not establish PNX-022 verification.
+tests, and Ktor replay/conflict/internal-error tests. PNX-023 adds file-backed
+SQLite lookup, corruption, reconstruction, and read-only evidence plus in-process
+Ktor lookup-contract tests. Automated IPC integration, live Android
+Service-to-Server transport, and end-to-end test infrastructure remain future
+work. PNX-011 through PNX-022 sections below preserve historical procedures and
+evidence; they do not establish PNX-023 verification.
 
 ## Philosophy and Naming
 
@@ -609,6 +612,53 @@ processor. They do not establish multi-node coordination, distributed idempotenc
 production database durability, exactly-once external financial execution, Android
 retry/replay, or transaction lookup. Runtime/manual end-to-end verification remains
 deferred, and remote CI requires later authorized Git and Pull Request work.
+
+## Payment Server Durable Payment Lookup Verification (PNX-023)
+
+PNX-023 keeps the three existing server test layers. `:server:domain` retains its
+PNX-022 processing tests while adapting handwritten repositories to the expanded
+purpose-specific port. `:server:infrastructure` uses temporary file-backed SQLite
+databases to verify exact-key lookup, absence, case and whitespace identity,
+`Long.MAX_VALUE`, every supported outcome/reason combination, corrupt-row failure,
+repository reconstruction, and unchanged row count and stored column values after
+reads. `:server:application` uses Ktor `testApplication` to verify exact HTTP
+200/400/404/500 JSON contracts, the 256-code-unit boundary, exact key preservation,
+observable duplicate-header rejection, body-independent GET behavior, sanitized
+errors, health stability, and the complete POST regression suite.
+
+Use JDK 17 and the committed Gradle Wrapper from the repository root:
+
+```bash
+./gradlew :server:domain:test --rerun-tasks
+./gradlew :server:infrastructure:test --rerun-tasks
+./gradlew :server:application:test --rerun-tasks
+./gradlew :server:domain:build
+./gradlew :server:infrastructure:build
+./gradlew :server:application:build
+./gradlew :server:application:distZip
+./gradlew :server:application:distTar
+./gradlew :server:domain:dependencies --configuration runtimeClasspath
+./gradlew :server:infrastructure:dependencies --configuration runtimeClasspath
+./gradlew :server:application:dependencies --configuration runtimeClasspath
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+git diff --check
+```
+
+Inspect test reports for exact execution counts and inspect runtime graphs and both
+distribution archives for module direction, unique project JAR basenames, packaged
+SQLite JDBC, and absence of Android dependencies. Also inspect exact GET and POST
+responses, duplicate-header behavior, committed-state semantics, corrupt-row
+failure, read-only database evidence, accidental database files, integer-only
+money, sensitive logging, secrets, and quality or CI weakening.
+
+Lookup is by the exact durable idempotency key only. It does not provide
+payment-ID lookup, list/history/search, an Android lookup consumer, polling,
+retry, recovery lookup, authentication, or authorization. Runtime/manual
+end-to-end verification remains **DEFERRED**, and remote CI remains **NOT RUN**
+until later authorized Git and Pull Request work.
 
 ## IPC Contract Foundation Verification
 

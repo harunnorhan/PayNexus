@@ -232,6 +232,33 @@ exactly-once execution of future bank/acquirer side effects. No transaction look
 Payment Service retry/replay, or Android behavior is added. Runtime/manual
 end-to-end verification remains deferred.
 
+### Payment Server Durable Payment Lookup (PNX-023)
+
+The Payment Server now exposes a read-only lookup on the same versioned payment
+resource:
+
+```text
+GET /v1/payments
+PayNexus-Idempotency-Key: <exact-key>
+```
+
+The header must contain exactly one nonblank value of at most 256 UTF-16 code
+units. Accepted text is used exactly as supplied without trimming, normalization,
+or case folding. An existing committed row returns HTTP 200 with the existing
+payment response representation. A valid unknown key returns HTTP 404 with
+`{"error":"PAYMENT_NOT_FOUND"}`, invalid lookup input returns HTTP 400 with
+`{"error":"INVALID_REQUEST"}`, and persistence failure returns the existing
+sanitized HTTP 500 `{"error":"INTERNAL_ERROR"}` response.
+
+Lookup reads the authoritative stored record and never recomputes an outcome,
+inserts, updates, retries, replays, polls, or waits for an in-flight POST. A 404
+means only that no committed row was visible at lookup time. Existing POST
+creation, replay, conflict, validation, and persistence-failure behavior is
+unchanged. Lookup is by durable idempotency key only; there is no payment-ID
+lookup, list, history, search, or Android lookup consumer. Authentication and
+authorization remain outside this portfolio task, and runtime/manual end-to-end
+verification remains deferred.
+
 ### Design System Foundation
 
 `design-system` provides the provisional Compose theme, compact spacing tokens,

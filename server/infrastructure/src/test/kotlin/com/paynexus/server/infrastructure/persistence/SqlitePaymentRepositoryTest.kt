@@ -22,9 +22,53 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SqlitePaymentRepositoryTest {
+    @Test
+    fun `lookup returns exact records and does not mutate durable state`() =
+        withTemporaryDatabase { databasePath ->
+            val repository = SqlitePaymentRepository(databasePath)
+            val records =
+                listOf(
+                    record(
+                        paymentId = " Mixed-Case Payment-ID ",
+                        idempotencyKey = " Mixed-Case Idempotency-Key ",
+                        amountMinorUnits = 300L,
+                        outcome = PaymentOutcome.APPROVED,
+                    ),
+                    record("declined-payment", "declined-key", 301L, PaymentOutcome.DECLINED),
+                    record("failed-payment", "failed-key", 302L, PaymentOutcome.FAILED),
+                    record("maximum-payment", "maximum-key", Long.MAX_VALUE, PaymentOutcome.DECLINED),
+                )
+            records.forEach { repository.storeOrRead(it) }
+            val rowCountBefore = rowCount(databasePath)
+            val rowsBefore = durableRows(databasePath)
+
+            records.forEach { expected ->
+                assertEquals(expected, repository.findByIdempotencyKey(expected.request.idempotencyKey))
+            }
+
+            assertNull(repository.findByIdempotencyKey("missing-key"))
+            assertNull(repository.findByIdempotencyKey(" mixed-case idempotency-key "))
+            assertNull(repository.findByIdempotencyKey("Mixed-Case Idempotency-Key"))
+            assertEquals(rowCountBefore, rowCount(databasePath))
+            assertEquals(rowsBefore, durableRows(databasePath))
+        }
+
+    @Test
+    fun `lookup survives repository reconstruction against the same file`() =
+        withTemporaryDatabase { databasePath ->
+            val expected = record("restart-payment", "restart-key", Long.MAX_VALUE, PaymentOutcome.DECLINED)
+            SqlitePaymentRepository(databasePath).storeOrRead(expected)
+
+            val reconstructed = SqlitePaymentRepository(databasePath)
+
+            assertEquals(expected, reconstructed.findByIdempotencyKey("restart-key"))
+            assertEquals(1, rowCount(databasePath))
+        }
+
     @Test
     fun `schema bootstrap creates parents and exact values round trip`() =
         withTemporaryDatabase(nested = true) { databasePath ->
@@ -126,23 +170,42 @@ class SqlitePaymentRepositoryTest {
         }
 
     @Test
-    fun `corrupt stored identifiers fail through the sanitized repository exception`() =
-        withTemporaryDatabase { databasePath ->
-            val repository = SqlitePaymentRepository(databasePath)
-            DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}").use { connection ->
-                insertRawValues(
-                    connection = connection,
-                    idempotencyKey = "idempotency-key",
-                    paymentId = "",
-                    amountMinorUnits = 300L,
-                    outcome = PaymentOutcome.APPROVED,
-                )
+    fun `lookup rejects every supported corrupt row shape`() {
+        listOf(
+            CorruptRow(idempotencyKey = "amount-type-key", amountMinorUnits = "not-an-integer"),
+            CorruptRow(idempotencyKey = "amount-value-key", amountMinorUnits = 0L),
+            CorruptRow(idempotencyKey = "payment-id-key", paymentId = ""),
+            CorruptRow(idempotencyKey = "", lookupKey = ""),
+            CorruptRow(idempotencyKey = "currency-key", currency = "USD"),
+            CorruptRow(idempotencyKey = "outcome-key", outcome = "UNKNOWN"),
+            CorruptRow(idempotencyKey = "reason-key", reason = "UNSPECIFIED"),
+        ).forEach { corrupt ->
+            withTemporaryDatabase { databasePath ->
+                val repository = SqlitePaymentRepository(databasePath)
+                DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}").use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("PRAGMA ignore_check_constraints = ON")
+                    }
+                    insertRawValues(
+                        connection = connection,
+                        idempotencyKey = corrupt.idempotencyKey,
+                        paymentId = corrupt.paymentId,
+                        amountMinorUnits = corrupt.amountMinorUnits,
+                        currency = corrupt.currency,
+                        outcome = corrupt.outcome,
+                        reason = corrupt.reason,
+                    )
+                }
+
+                val failure =
+                    assertFailsWith<PaymentRepositoryException> {
+                        repository.findByIdempotencyKey(corrupt.lookupKey)
+                    }
+
+                assertEquals("Payment repository operation failed.", failure.message)
             }
-
-            val failure = assertFailsWith<PaymentRepositoryException> { repository.storeOrRead(record()) }
-
-            assertEquals("Payment repository operation failed.", failure.message)
         }
+    }
 
     @Test
     fun `exhausted SQLite lock wait becomes a sanitized repository failure`() =
@@ -212,6 +275,35 @@ class SqlitePaymentRepositoryTest {
             }
         }
 
+    private fun durableRows(databasePath: Path): List<DurableRow> =
+        DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}").use { connection ->
+            connection.createStatement().use { statement ->
+                statement
+                    .executeQuery(
+                        """
+                        SELECT idempotency_key, payment_id, amount_minor_units, currency, outcome, reason
+                        FROM payments
+                        ORDER BY idempotency_key
+                        """.trimIndent(),
+                    ).use { resultSet ->
+                        buildList {
+                            while (resultSet.next()) {
+                                add(
+                                    DurableRow(
+                                        idempotencyKey = resultSet.getString("idempotency_key"),
+                                        paymentId = resultSet.getString("payment_id"),
+                                        amountMinorUnits = resultSet.getObject("amount_minor_units"),
+                                        currency = resultSet.getString("currency"),
+                                        outcome = resultSet.getString("outcome"),
+                                        reason = resultSet.getString("reason"),
+                                    ),
+                                )
+                            }
+                        }
+                    }
+            }
+        }
+
     private fun insertRaw(
         connection: java.sql.Connection,
         record: StoredPaymentRecord,
@@ -220,15 +312,19 @@ class SqlitePaymentRepositoryTest {
         idempotencyKey = record.request.idempotencyKey,
         paymentId = record.request.intent.paymentId,
         amountMinorUnits = record.request.intent.amountMinorUnits,
-        outcome = record.outcome,
+        currency = record.request.intent.currency.name,
+        outcome = record.outcome.name,
+        reason = record.outcome.reason?.name,
     )
 
     private fun insertRawValues(
         connection: java.sql.Connection,
         idempotencyKey: String,
         paymentId: String,
-        amountMinorUnits: Long,
-        outcome: PaymentOutcome,
+        amountMinorUnits: Any,
+        currency: String = PaymentCurrency.TRY.name,
+        outcome: String = PaymentOutcome.APPROVED.name,
+        reason: String? = null,
     ) {
         connection
             .prepareStatement(
@@ -240,13 +336,32 @@ class SqlitePaymentRepositoryTest {
             ).use { statement ->
                 statement.setString(1, idempotencyKey)
                 statement.setString(2, paymentId)
-                statement.setLong(3, amountMinorUnits)
-                statement.setString(4, PaymentCurrency.TRY.name)
-                statement.setString(5, outcome.name)
-                statement.setString(6, outcome.reason?.name)
+                statement.setObject(3, amountMinorUnits)
+                statement.setString(4, currency)
+                statement.setString(5, outcome)
+                statement.setString(6, reason)
                 statement.executeUpdate()
             }
     }
+
+    private data class DurableRow(
+        val idempotencyKey: String,
+        val paymentId: String,
+        val amountMinorUnits: Any,
+        val currency: String,
+        val outcome: String,
+        val reason: String?,
+    )
+
+    private data class CorruptRow(
+        val idempotencyKey: String,
+        val lookupKey: String = idempotencyKey,
+        val paymentId: String = "payment-id",
+        val amountMinorUnits: Any = 300L,
+        val currency: String = PaymentCurrency.TRY.name,
+        val outcome: String = PaymentOutcome.APPROVED.name,
+        val reason: String? = null,
+    )
 
     private fun withTemporaryDatabase(
         nested: Boolean = false,

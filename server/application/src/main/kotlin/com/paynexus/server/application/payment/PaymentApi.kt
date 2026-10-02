@@ -7,6 +7,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import kotlinx.serialization.Serializable
@@ -37,11 +38,15 @@ internal data class PaymentErrorDto(
 
 internal val invalidPaymentRequestResponse = PaymentErrorDto(error = INVALID_REQUEST)
 internal val internalServerErrorResponse = PaymentErrorDto(error = INTERNAL_ERROR)
+private val paymentNotFoundResponse = PaymentErrorDto(error = PAYMENT_NOT_FOUND)
 private val idempotencyConflictResponse = PaymentErrorDto(error = IDEMPOTENCY_CONFLICT)
 
-internal fun Route.paymentRoutes(processPayment: suspend (AcceptedPaymentRequest) -> PaymentProcessingResult) {
-    route("/v1") {
-        post("/payments") {
+internal fun Route.paymentRoutes(
+    processPayment: suspend (AcceptedPaymentRequest) -> PaymentProcessingResult,
+    findPaymentByIdempotencyKey: suspend (String) -> StoredPaymentRecord?,
+) {
+    route("/v1/payments") {
+        post {
             val requestDto = call.receive<PaymentRequestDto>()
             val request =
                 PaymentRequestValidator.validate(
@@ -69,8 +74,30 @@ internal fun Route.paymentRoutes(processPayment: suspend (AcceptedPaymentRequest
                 }
             }
         }
+        get {
+            val idempotencyKey =
+                validateLookupIdempotencyKey(
+                    call.request.headers.getAll(PAYNEXUS_IDEMPOTENCY_KEY_HEADER),
+                )
+            if (idempotencyKey == null) {
+                call.respond(HttpStatusCode.BadRequest, invalidPaymentRequestResponse)
+                return@get
+            }
+
+            val record = findPaymentByIdempotencyKey(idempotencyKey)
+            if (record == null) {
+                call.respond(HttpStatusCode.NotFound, paymentNotFoundResponse)
+                return@get
+            }
+            call.respondPayment(record)
+        }
     }
 }
+
+internal fun validateLookupIdempotencyKey(headerValues: List<String>?): String? =
+    headerValues
+        ?.singleOrNull()
+        ?.let(PaymentRequestValidator::validateIdempotencyKey)
 
 private fun JsonElement?.strictLongOrNull(): Long? {
     val primitive = this as? JsonPrimitive
@@ -93,3 +120,5 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondPayment(re
 private const val INVALID_REQUEST = "INVALID_REQUEST"
 private const val IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
 private const val INTERNAL_ERROR = "INTERNAL_ERROR"
+private const val PAYMENT_NOT_FOUND = "PAYMENT_NOT_FOUND"
+internal const val PAYNEXUS_IDEMPOTENCY_KEY_HEADER = "PayNexus-Idempotency-Key"

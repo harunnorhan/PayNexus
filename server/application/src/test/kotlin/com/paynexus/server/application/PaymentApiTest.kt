@@ -1,9 +1,12 @@
 package com.paynexus.server.application
 
-import com.paynexus.server.domain.payment.IdempotentPaymentProcessor
+import com.paynexus.server.application.payment.PAYNEXUS_IDEMPOTENCY_KEY_HEADER
+import com.paynexus.server.application.payment.validateLookupIdempotencyKey
 import com.paynexus.server.domain.payment.PaymentRepository
 import com.paynexus.server.domain.payment.PaymentRepositoryException
+import com.paynexus.server.domain.payment.StoredPaymentRecord
 import io.ktor.client.HttpClient
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -15,13 +18,15 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 
 class PaymentApiTest {
     @Test
     fun `first payment and same intent replay return the same stored response`() =
         testApplication {
             val repository = TestPaymentRepository()
-            application { module(testPaymentProcessor(repository)::process) }
+            application { testModule(repository) }
 
             val first = client.postPayment(requestBody(amountMinorUnits = "301"))
             val replay = client.postPayment(requestBody(amountMinorUnits = "301"))
@@ -35,7 +40,7 @@ class PaymentApiTest {
     @Test
     fun `same key with a different payment ID returns exact idempotency conflict`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
             client.postPayment(requestBody(paymentId = "\"original-payment\""))
 
             val conflict = client.postPayment(requestBody(paymentId = "\"different-payment\""))
@@ -46,7 +51,7 @@ class PaymentApiTest {
     @Test
     fun `same key with a different amount returns exact idempotency conflict`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
             client.postPayment(requestBody(amountMinorUnits = "300"))
 
             val conflict = client.postPayment(requestBody(amountMinorUnits = "301"))
@@ -58,7 +63,7 @@ class PaymentApiTest {
     fun `invalid request does not reach persistence`() =
         testApplication {
             val repository = TestPaymentRepository()
-            application { module(testPaymentProcessor(repository)::process) }
+            application { testModule(repository) }
 
             val response = client.postPayment(requestBody(amountMinorUnits = "0"))
 
@@ -69,7 +74,7 @@ class PaymentApiTest {
     @Test
     fun `maximum Long amount replays without narrowing`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             val first = client.postPayment(requestBody(amountMinorUnits = Long.MAX_VALUE.toString()))
             val replay = client.postPayment(requestBody(amountMinorUnits = Long.MAX_VALUE.toString()))
@@ -82,15 +87,16 @@ class PaymentApiTest {
     @Test
     fun `repository failure returns sanitized internal error`() =
         testApplication {
-            val processor =
-                IdempotentPaymentProcessor(
-                    PaymentRepository {
+            val repository =
+                object : PaymentRepository {
+                    override fun storeOrRead(candidate: StoredPaymentRecord) =
                         throw PaymentRepositoryException(
                             IllegalStateException("jdbc:sqlite:/private/path SQL supplied-payment-id"),
                         )
-                    },
-                )
-            application { module(processor::process) }
+
+                    override fun findByIdempotencyKey(idempotencyKey: String) = null
+                }
+            application { testModule(repository) }
 
             val response = client.postPayment(requestBody())
 
@@ -98,9 +104,152 @@ class PaymentApiTest {
         }
 
     @Test
+    fun `lookup returns the exact authoritative stored response`() =
+        testApplication {
+            val repository = TestPaymentRepository()
+            application { testModule(repository) }
+            val paymentId = " Mixed-Case Payment-ID "
+            val idempotencyKey = " Mixed-Case Idempotency-Key "
+            client.postPayment(
+                requestBody(
+                    paymentId = "\"$paymentId\"",
+                    idempotencyKey = "\"$idempotencyKey\"",
+                    amountMinorUnits = "302",
+                ),
+            )
+
+            val response = client.getPayment(listOf(idempotencyKey))
+
+            assertJsonResponse(
+                response,
+                HttpStatusCode.OK,
+                paymentResponseBody(
+                    paymentId = paymentId,
+                    idempotencyKey = idempotencyKey,
+                    outcome = "FAILED",
+                    reason = "PROCESSING_ERROR",
+                ),
+            )
+            assertEquals(1, repository.findCalls.get())
+        }
+
+    @Test
+    fun `unknown valid lookup returns exact payment not found response`() =
+        testApplication {
+            application { testModule() }
+
+            val response = client.getPayment(listOf("unknown-key"))
+
+            assertJsonResponse(response, HttpStatusCode.NotFound, """{"error":"PAYMENT_NOT_FOUND"}""")
+        }
+
+    @Test
+    fun `missing blank and oversized lookup headers are rejected`() =
+        testApplication {
+            val repository = TestPaymentRepository()
+            application { testModule(repository) }
+
+            val responses =
+                listOf(
+                    "missing" to client.getPayment(),
+                    "empty" to client.getPayment(listOf("")),
+                    "whitespace" to client.getPayment(listOf(" \t")),
+                    "oversized" to client.getPayment(listOf("x".repeat(257))),
+                )
+
+            responses.forEach { (context, response) -> assertInvalidResponse(response, context) }
+            assertEquals(0, repository.findCalls.get())
+        }
+
+    @Test
+    fun `observable duplicate lookup header values are rejected`() {
+        assertNull(validateLookupIdempotencyKey(listOf("first-key", "second-key")))
+    }
+
+    @Test
+    fun `test client combined duplicate header is treated as one exact value`() =
+        testApplication {
+            application { testModule() }
+
+            val response = client.getPayment(listOf("first-key", "second-key"))
+
+            assertJsonResponse(response, HttpStatusCode.NotFound, """{"error":"PAYMENT_NOT_FOUND"}""")
+        }
+
+    @Test
+    fun `lookup accepts exactly 256 UTF-16 code units`() =
+        testApplication {
+            val repository = TestPaymentRepository()
+            application { testModule(repository) }
+            val idempotencyKey = "x".repeat(256)
+            client.postPayment(requestBody(idempotencyKey = "\"$idempotencyKey\""))
+
+            val response = client.getPayment(listOf(idempotencyKey))
+
+            assertJsonResponse(
+                response,
+                HttpStatusCode.OK,
+                paymentResponseBody(idempotencyKey = idempotencyKey, outcome = "APPROVED"),
+            )
+        }
+
+    @Test
+    fun `lookup preserves case and nonblank surrounding whitespace`() =
+        testApplication {
+            application { testModule() }
+            val exactKey = " Mixed-Case-Key "
+            client.postPayment(requestBody(idempotencyKey = "\"$exactKey\""))
+
+            val exact = client.getPayment(listOf(exactKey))
+            val differentCase = client.getPayment(listOf(" mixed-case-key "))
+            val trimmed = client.getPayment(listOf("Mixed-Case-Key"))
+
+            assertJsonResponse(
+                exact,
+                HttpStatusCode.OK,
+                paymentResponseBody(idempotencyKey = exactKey, outcome = "APPROVED"),
+            )
+            assertJsonResponse(differentCase, HttpStatusCode.NotFound, """{"error":"PAYMENT_NOT_FOUND"}""")
+            assertJsonResponse(trimmed, HttpStatusCode.NotFound, """{"error":"PAYMENT_NOT_FOUND"}""")
+        }
+
+    @Test
+    fun `lookup ignores a JSON body and reads only the exact header`() =
+        testApplication {
+            application { testModule() }
+            client.postPayment(requestBody())
+
+            val response = client.getPayment(listOf("idempotency-key"), body = "{")
+
+            assertJsonResponse(response, HttpStatusCode.OK, paymentResponseBody(outcome = "APPROVED"))
+        }
+
+    @Test
+    fun `lookup repository failure returns only sanitized internal error`() =
+        testApplication {
+            val lookupKey = "supplied-sensitive-lookup-key"
+            val failureDetails = "jdbc:sqlite:/private/path SELECT payment-id"
+            application {
+                module(
+                    processPayment = testPaymentProcessor()::process,
+                    findPaymentByIdempotencyKey = {
+                        throw PaymentRepositoryException(IllegalStateException(failureDetails))
+                    },
+                )
+            }
+
+            val response = client.getPayment(listOf(lookupKey))
+            val body = response.bodyAsText()
+
+            assertJsonResponse(response, HttpStatusCode.InternalServerError, """{"error":"INTERNAL_ERROR"}""")
+            assertFalse(body.contains(lookupKey))
+            assertFalse(body.contains(failureDetails))
+        }
+
+    @Test
     fun `approved payment preserves exact identifiers and returns deterministic JSON`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             val response =
                 client.postPayment(
@@ -125,7 +274,7 @@ class PaymentApiTest {
     @Test
     fun `declined payment returns explicit unspecified reason`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             val response = client.postPayment(requestBody(amountMinorUnits = "301"))
 
@@ -139,7 +288,7 @@ class PaymentApiTest {
     @Test
     fun `failed payment returns explicit processing error reason`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             val response = client.postPayment(requestBody(amountMinorUnits = "302"))
 
@@ -153,7 +302,7 @@ class PaymentApiTest {
     @Test
     fun `maximum Long amount is accepted without narrowing`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             val response = client.postPayment(requestBody(amountMinorUnits = Long.MAX_VALUE.toString()))
 
@@ -167,7 +316,7 @@ class PaymentApiTest {
     @Test
     fun `identifiers at the 256 code unit boundary are accepted exactly`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
             val identifier = "x".repeat(256)
 
             val response =
@@ -188,7 +337,7 @@ class PaymentApiTest {
     @Test
     fun `identifiers over the transport boundary are rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
             val oversized = "x".repeat(257)
 
             listOf(
@@ -202,7 +351,7 @@ class PaymentApiTest {
     @Test
     fun `zero and negative amounts are rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             listOf("0", "-1", Long.MIN_VALUE.toString()).forEach { amount ->
                 assertInvalidResponse(client.postPayment(requestBody(amountMinorUnits = amount)))
@@ -212,7 +361,7 @@ class PaymentApiTest {
     @Test
     fun `blank identifiers are rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             listOf("\"\"", "\" \"", "\"\\t\\n\"").forEach { blank ->
                 assertInvalidResponse(client.postPayment(requestBody(paymentId = blank)))
@@ -223,7 +372,7 @@ class PaymentApiTest {
     @Test
     fun `unsupported and noncanonical currencies are rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             listOf("USD", "try", " TRY", "TRY ", "").forEach { currency ->
                 assertInvalidResponse(client.postPayment(requestBody(currency = "\"$currency\"")))
@@ -233,7 +382,7 @@ class PaymentApiTest {
     @Test
     fun `malformed JSON and an empty body are rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             listOf("", "{", "not-json").forEach { body ->
                 assertInvalidResponse(client.postPayment(body))
@@ -243,7 +392,7 @@ class PaymentApiTest {
     @Test
     fun `every missing required field is rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             listOf(
                 """{"idempotencyKey":"idempotency-key","amountMinorUnits":300,"currency":"TRY"}""",
@@ -258,7 +407,7 @@ class PaymentApiTest {
     @Test
     fun `explicit null required fields are rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             listOf(
                 requestBody(paymentId = "null"),
@@ -273,7 +422,7 @@ class PaymentApiTest {
     @Test
     fun `wrong JSON field types and integers outside Long range are rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             listOf(
                 requestBody(paymentId = "123"),
@@ -290,7 +439,7 @@ class PaymentApiTest {
     @Test
     fun `unknown JSON properties are rejected`() =
         testApplication {
-            application { module(testPaymentProcessor()::process) }
+            application { testModule() }
 
             val response =
                 client.postPayment(
@@ -304,6 +453,18 @@ class PaymentApiTest {
         post("/v1/payments") {
             header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
             setBody(body)
+        }
+
+    private suspend fun HttpClient.getPayment(
+        idempotencyKeys: List<String> = emptyList(),
+        body: String? = null,
+    ): HttpResponse =
+        get("/v1/payments") {
+            idempotencyKeys.forEach { headers.append(PAYNEXUS_IDEMPOTENCY_KEY_HEADER, it) }
+            if (body != null) {
+                header(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+                setBody(body)
+            }
         }
 
     private suspend fun assertInvalidResponse(

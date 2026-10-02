@@ -1,7 +1,9 @@
 package com.paynexus.server.domain.payment
 
-fun interface PaymentRepository {
+interface PaymentRepository {
     fun storeOrRead(candidate: StoredPaymentRecord): StoreOrReadResult
+
+    fun findByIdempotencyKey(idempotencyKey: String): StoredPaymentRecord?
 }
 
 sealed interface StoreOrReadResult {

@@ -7,6 +7,7 @@ import com.paynexus.server.domain.payment.AcceptedPaymentRequest
 import com.paynexus.server.domain.payment.IdempotentPaymentProcessor
 import com.paynexus.server.domain.payment.PaymentProcessingResult
 import com.paynexus.server.domain.payment.PaymentRepositoryException
+import com.paynexus.server.domain.payment.StoredPaymentRecord
 import com.paynexus.server.infrastructure.persistence.SqlitePaymentRepository
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -43,14 +44,20 @@ fun main() {
 fun Application.module() {
     val repository = SqlitePaymentRepository(resolvePaymentDatabasePath(System.getenv()))
     val processor = IdempotentPaymentProcessor(repository)
-    module { request ->
-        withContext(Dispatchers.IO) {
-            processor.process(request)
-        }
-    }
+    module(
+        processPayment = { request ->
+            withContext(Dispatchers.IO) { processor.process(request) }
+        },
+        findPaymentByIdempotencyKey = { idempotencyKey ->
+            withContext(Dispatchers.IO) { repository.findByIdempotencyKey(idempotencyKey) }
+        },
+    )
 }
 
-internal fun Application.module(processPayment: suspend (AcceptedPaymentRequest) -> PaymentProcessingResult) {
+internal fun Application.module(
+    processPayment: suspend (AcceptedPaymentRequest) -> PaymentProcessingResult,
+    findPaymentByIdempotencyKey: suspend (String) -> StoredPaymentRecord?,
+) {
     install(ContentNegotiation) {
         json(
             Json {
@@ -83,7 +90,7 @@ internal fun Application.module(processPayment: suspend (AcceptedPaymentRequest)
                 status = HttpStatusCode.OK,
             )
         }
-        paymentRoutes(processPayment)
+        paymentRoutes(processPayment, findPaymentByIdempotencyKey)
     }
 }
 

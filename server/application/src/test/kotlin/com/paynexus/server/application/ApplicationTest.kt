@@ -14,7 +14,7 @@ class ApplicationTest {
     fun `health endpoint returns deterministic healthy JSON response`() =
         testApplication {
             application {
-                module(testPaymentProcessor()::process)
+                testModule()
             }
 
             val response = client.get("/health")

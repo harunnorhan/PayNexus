@@ -12,7 +12,7 @@ internal object PaymentRequestValidator {
         currency: String?,
     ): AcceptedPaymentRequest? {
         val acceptedPaymentId = paymentId?.takeIf { it.isValidIdentifier() }
-        val acceptedIdempotencyKey = idempotencyKey?.takeIf { it.isValidIdentifier() }
+        val acceptedIdempotencyKey = validateIdempotencyKey(idempotencyKey)
         val acceptedAmount = amountMinorUnits?.takeIf { it > 0L }
         return when {
             acceptedPaymentId == null || acceptedIdempotencyKey == null -> {
@@ -36,6 +36,8 @@ internal object PaymentRequestValidator {
             }
         }
     }
+
+    fun validateIdempotencyKey(idempotencyKey: String?): String? = idempotencyKey?.takeIf { it.isValidIdentifier() }
 
     private fun String.isValidIdentifier(): Boolean = isNotBlank() && length <= MAX_IDENTIFIER_LENGTH
 

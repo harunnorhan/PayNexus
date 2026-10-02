@@ -25,7 +25,11 @@ class IdempotentPaymentProcessorTest {
         val stored = StoredPaymentRecord(accepted, PaymentOutcome.FAILED)
         val processor =
             IdempotentPaymentProcessor(
-                PaymentRepository { StoreOrReadResult.Existing(stored) },
+                object : PaymentRepository {
+                    override fun storeOrRead(candidate: StoredPaymentRecord) = StoreOrReadResult.Existing(stored)
+
+                    override fun findByIdempotencyKey(idempotencyKey: String): StoredPaymentRecord? = stored
+                },
             )
 
         val result = processor.process(accepted)
@@ -91,7 +95,14 @@ class IdempotentPaymentProcessorTest {
     @Test
     fun `repository failure propagates without becoming a payment outcome`() {
         val failure = PaymentRepositoryException()
-        val processor = IdempotentPaymentProcessor(PaymentRepository { throw failure })
+        val processor =
+            IdempotentPaymentProcessor(
+                object : PaymentRepository {
+                    override fun storeOrRead(candidate: StoredPaymentRecord): StoreOrReadResult = throw failure
+
+                    override fun findByIdempotencyKey(idempotencyKey: String): StoredPaymentRecord? = throw failure
+                },
+            )
 
         val thrown = assertFailsWith<PaymentRepositoryException> { processor.process(request()) }
 
@@ -127,7 +138,9 @@ class IdempotentPaymentProcessorTest {
             }
         }
 
-        fun record(idempotencyKey: String): StoredPaymentRecord? = records[idempotencyKey]
+        override fun findByIdempotencyKey(idempotencyKey: String): StoredPaymentRecord? = records[idempotencyKey]
+
+        fun record(idempotencyKey: String): StoredPaymentRecord? = findByIdempotencyKey(idempotencyKey)
     }
 
     private companion object {

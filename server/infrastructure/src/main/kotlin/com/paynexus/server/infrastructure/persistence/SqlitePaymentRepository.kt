@@ -47,6 +47,13 @@ class SqlitePaymentRepository(
             }
         }
 
+    override fun findByIdempotencyKey(idempotencyKey: String): StoredPaymentRecord? =
+        persistenceOperation {
+            openConnection().use { connection ->
+                readByIdempotencyKey(connection, idempotencyKey)
+            }
+        }
+
     private fun openConnection(): Connection {
         val config = SQLiteConfig().apply { setBusyTimeout(busyTimeoutMillis) }
         return DriverManager.getConnection("jdbc:sqlite:$databasePath", config.toProperties())

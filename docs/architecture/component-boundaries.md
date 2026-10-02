@@ -276,6 +276,30 @@ processor only. It does not provide distributed idempotency or exactly-once futu
 external financial execution. Transaction lookup and Android retry/replay remain
 outside this boundary.
 
+### Payment Server Durable Payment Lookup (PNX-023)
+
+`:server:application` owns `GET /v1/payments`, extraction and validation of the
+single `PayNexus-Idempotency-Key` header value, and stable HTTP mapping. It reuses
+the existing payment response DTO and stored-record mapping. Found committed rows
+return HTTP 200, valid unknown keys return HTTP 404 `PAYMENT_NOT_FOUND`, invalid
+headers return HTTP 400 `INVALID_REQUEST`, and repository failures return the
+sanitized HTTP 500 `INTERNAL_ERROR` response.
+
+`:server:domain` extends its purpose-specific repository port with an exact
+idempotency-key lookup returning a nullable stored record. It adds no Ktor, JDBC,
+SQLite, Android, transport DTO, or speculative lookup-use-case dependency.
+`:server:infrastructure` implements the read with parameterized SQLite SQL and the
+existing authoritative row reconstruction. The read performs no insert, update,
+or outcome calculation, and the schema and payment-ID uniqueness semantics remain
+unchanged.
+
+Lookup observes committed state only. It does not wait for an in-flight POST,
+poll, retry, replay, or introduce an application-level lock. HTTP 404 means only
+that no committed row was visible when the read occurred. POST idempotency
+semantics remain unchanged. The endpoint has no Android consumer, and no payment-ID
+lookup, list, history, search, authentication, or authorization is introduced.
+Runtime/manual end-to-end verification remains deferred.
+
 ## Dependency Direction
 
 The intended dependency direction is:

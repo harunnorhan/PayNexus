@@ -11,8 +11,18 @@ internal data class PaymentServerRequest(
     val amount: PaymentAmount,
 )
 
-internal fun interface PaymentServerClient : AutoCloseable {
+internal data class PaymentServerResponseExpectation(
+    val paymentId: PaymentId,
+    val idempotencyKey: IdempotencyKey,
+)
+
+internal interface PaymentServerClient : AutoCloseable {
     suspend fun submit(request: PaymentServerRequest): PaymentServerCallResult
+
+    suspend fun lookup(
+        paymentId: PaymentId,
+        idempotencyKey: IdempotencyKey,
+    ): PaymentServerLookupResult
 
     override fun close() = Unit
 }
@@ -27,14 +37,30 @@ internal sealed interface PaymentServerCallResult {
     ) : PaymentServerCallResult
 }
 
+internal sealed interface PaymentServerLookupResult {
+    data class Found(
+        val outcome: PaymentOutcome,
+    ) : PaymentServerLookupResult
+
+    data object NotFound : PaymentServerLookupResult
+
+    data class Unsuccessful(
+        val failure: PaymentServerClientFailure,
+    ) : PaymentServerLookupResult
+}
+
 internal sealed interface PaymentServerClientFailure {
     data object InvalidRequest : PaymentServerClientFailure
+
+    data object IdempotencyConflict : PaymentServerClientFailure
 
     data class UnexpectedHttpStatus(
         val statusCode: Int,
     ) : PaymentServerClientFailure
 
-    data object MalformedResponse : PaymentServerClientFailure
+    data class MalformedResponse(
+        val statusCode: Int,
+    ) : PaymentServerClientFailure
 
     data object InvalidOutcome : PaymentServerClientFailure
 

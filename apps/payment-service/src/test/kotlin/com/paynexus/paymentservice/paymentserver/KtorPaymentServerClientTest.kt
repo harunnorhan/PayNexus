@@ -28,6 +28,7 @@ import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class KtorPaymentServerClientTest {
     @Test
@@ -104,6 +105,55 @@ class KtorPaymentServerClientTest {
     }
 
     @Test
+    fun `malformed and wrong http 400 bodies preserve bad request status`() {
+        val bodies =
+            listOf(
+                "{",
+                """{"error":"WRONG_ERROR"}""",
+                """{"error":"INVALID_REQUEST","unknown":"value"}""",
+                "",
+            )
+
+        bodies.forEach { body ->
+            assertEquals(
+                PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse(400)),
+                submit(responseStatus = HttpStatusCode.BadRequest, responseBody = body),
+                body,
+            )
+        }
+    }
+
+    @Test
+    fun `exact http 409 idempotency conflict is classified explicitly`() {
+        assertEquals(
+            PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.IdempotencyConflict),
+            submit(
+                responseStatus = HttpStatusCode.Conflict,
+                responseBody = """{"error":"IDEMPOTENCY_CONFLICT"}""",
+            ),
+        )
+    }
+
+    @Test
+    fun `malformed and wrong http 409 bodies preserve conflict status`() {
+        val bodies =
+            listOf(
+                "{",
+                """{"error":"WRONG_ERROR"}""",
+                """{"error":"IDEMPOTENCY_CONFLICT","unknown":"value"}""",
+                "",
+            )
+
+        bodies.forEach { body ->
+            assertEquals(
+                PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse(409)),
+                submit(responseStatus = HttpStatusCode.Conflict, responseBody = body),
+                body,
+            )
+        }
+    }
+
+    @Test
     fun `unexpected http status is classified without decoding a business outcome`() {
         assertEquals(
             PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.UnexpectedHttpStatus(500)),
@@ -114,7 +164,7 @@ class KtorPaymentServerClientTest {
     @Test
     fun `malformed success json is a protocol failure`() {
         assertEquals(
-            PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse),
+            PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse(200)),
             submit(responseBody = "{"),
         )
     }
@@ -124,7 +174,7 @@ class KtorPaymentServerClientTest {
         val body = response(outcome = "APPROVED").removeSuffix("}") + ",\"unknown\":\"value\"}"
 
         assertEquals(
-            PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse),
+            PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse(200)),
             submit(responseBody = body),
         )
     }
@@ -184,6 +234,120 @@ class KtorPaymentServerClientTest {
         }
     }
 
+    @Test
+    fun `lookup uses exact method path header and no payment body`() {
+        val engine =
+            MockEngine { request ->
+                assertEquals(HttpMethod.Get, request.method)
+                assertEquals("/v1/payments", request.url.encodedPath)
+                assertTrue(request.url.parameters.isEmpty())
+                assertEquals(IDEMPOTENCY_KEY, request.headers[PAYNEXUS_HEADER])
+                assertEquals(null, request.body.contentType)
+                assertTrue(request.body is OutgoingContent.NoContent)
+                jsonResponse(response(outcome = "APPROVED"))
+            }
+
+        assertEquals(
+            PaymentServerLookupResult.Found(PaymentOutcome.Approved),
+            lookup(engine = engine),
+        )
+    }
+
+    @Test
+    fun `lookup maps all exact supported outcomes`() {
+        val cases =
+            listOf(
+                response(outcome = "APPROVED") to PaymentOutcome.Approved,
+                response(outcome = "DECLINED", reason = "UNSPECIFIED") to
+                    PaymentOutcome.Declined(DeclineReason.UNSPECIFIED),
+                response(outcome = "FAILED", reason = "PROCESSING_ERROR") to
+                    PaymentOutcome.Failed(PaymentFailure.PROCESSING_ERROR),
+            )
+
+        cases.forEach { (body, outcome) ->
+            assertEquals(PaymentServerLookupResult.Found(outcome), lookup(responseBody = body))
+        }
+    }
+
+    @Test
+    fun `lookup rejects malformed invalid and mismatched success responses`() {
+        val cases =
+            listOf(
+                "{" to PaymentServerClientFailure.MalformedResponse(200),
+                response(outcome = "APPROVED").removeSuffix("}") + ",\"unknown\":\"value\"}" to
+                    PaymentServerClientFailure.MalformedResponse(200),
+                response(outcome = "UNKNOWN") to PaymentServerClientFailure.InvalidOutcome,
+                response(outcome = "APPROVED", reason = "UNSPECIFIED") to
+                    PaymentServerClientFailure.InvalidOutcome,
+                response(paymentId = "different-payment", outcome = "APPROVED") to
+                    PaymentServerClientFailure.IdentifierMismatch(ResponseIdentifier.PAYMENT_ID),
+                response(idempotencyKey = "different-key", outcome = "APPROVED") to
+                    PaymentServerClientFailure.IdentifierMismatch(ResponseIdentifier.IDEMPOTENCY_KEY),
+            )
+
+        cases.forEach { (body, failure) ->
+            assertEquals(
+                PaymentServerLookupResult.Unsuccessful(failure),
+                lookup(responseBody = body),
+                body,
+            )
+        }
+    }
+
+    @Test
+    fun `only exact payment not found response becomes lookup not found`() {
+        assertEquals(
+            PaymentServerLookupResult.NotFound,
+            lookup(HttpStatusCode.NotFound, """{"error":"PAYMENT_NOT_FOUND"}"""),
+        )
+
+        val invalidBodies =
+            listOf(
+                "{",
+                """{"error":"WRONG_ERROR"}""",
+                """{"error":"PAYMENT_NOT_FOUND","unknown":"value"}""",
+                "",
+            )
+        invalidBodies.forEach { body ->
+            assertEquals(
+                PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse(404)),
+                lookup(HttpStatusCode.NotFound, body),
+                body,
+            )
+        }
+    }
+
+    @Test
+    fun `lookup 400 and 500 remain unsuccessful`() {
+        assertEquals(
+            PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.InvalidRequest),
+            lookup(HttpStatusCode.BadRequest, """{"error":"INVALID_REQUEST"}"""),
+        )
+        assertEquals(
+            PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.UnexpectedHttpStatus(500)),
+            lookup(HttpStatusCode.InternalServerError, """{"error":"INTERNAL_ERROR"}"""),
+        )
+    }
+
+    @Test
+    fun `lookup transport failure is unsuccessful without exposing details`() {
+        val engine = MockEngine { throw IOException("synthetic lookup transport details") }
+
+        assertEquals(
+            PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.Transport),
+            lookup(engine = engine),
+        )
+    }
+
+    @Test
+    fun `lookup cancellation propagates`() {
+        val engine = MockEngine { throw CancellationException("synthetic lookup cancellation") }
+
+        assertFailsWith<CancellationException> {
+            lookup(engine = engine)
+        }
+    }
+
     private fun submit(
         amountMinorUnits: Long = 300L,
         responseStatus: HttpStatusCode = HttpStatusCode.OK,
@@ -194,6 +358,21 @@ class KtorPaymentServerClientTest {
         return try {
             runBlocking {
                 client.submit(request(amountMinorUnits))
+            }
+        } finally {
+            client.close()
+        }
+    }
+
+    private fun lookup(
+        responseStatus: HttpStatusCode = HttpStatusCode.OK,
+        responseBody: String = response(outcome = "APPROVED"),
+        engine: MockEngine = MockEngine { jsonResponse(responseBody, responseStatus) },
+    ): PaymentServerLookupResult {
+        val client = KtorPaymentServerClient.create(BASE_URL, engine)
+        return try {
+            runBlocking {
+                client.lookup(PaymentId(PAYMENT_ID), IdempotencyKey(IDEMPOTENCY_KEY))
             }
         } finally {
             client.close()
@@ -237,5 +416,6 @@ class KtorPaymentServerClientTest {
         val BASE_URL = Url("https://payment-server.test")
         const val PAYMENT_ID = " Mixed-Case Payment-ID "
         const val IDEMPOTENCY_KEY = " Mixed-Case Idempotency-Key "
+        const val PAYNEXUS_HEADER = "PayNexus-Idempotency-Key"
     }
 }

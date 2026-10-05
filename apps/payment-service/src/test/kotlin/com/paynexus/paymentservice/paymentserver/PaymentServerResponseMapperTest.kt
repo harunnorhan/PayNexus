@@ -1,10 +1,7 @@
 package com.paynexus.paymentservice.paymentserver
 
-import com.paynexus.payment.domain.CurrencyCode
 import com.paynexus.payment.domain.DeclineReason
 import com.paynexus.payment.domain.IdempotencyKey
-import com.paynexus.payment.domain.Money
-import com.paynexus.payment.domain.PaymentAmount
 import com.paynexus.payment.domain.PaymentFailure
 import com.paynexus.payment.domain.PaymentId
 import com.paynexus.payment.domain.PaymentOutcome
@@ -26,7 +23,7 @@ class PaymentServerResponseMapperTest {
         for ((response, expected) in cases) {
             assertEquals(
                 PaymentServerCallResult.Completed(expected),
-                PaymentServerResponseMapper.map(request(), response),
+                PaymentServerResponseMapper.map(expectation(), response),
             )
         }
     }
@@ -46,7 +43,7 @@ class PaymentServerResponseMapperTest {
         for (response in invalidResponses) {
             assertEquals(
                 PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.InvalidOutcome),
-                PaymentServerResponseMapper.map(request(), response),
+                PaymentServerResponseMapper.map(expectation(), response),
             )
         }
     }
@@ -59,7 +56,7 @@ class PaymentServerResponseMapperTest {
             PaymentServerCallResult.Unsuccessful(
                 PaymentServerClientFailure.IdentifierMismatch(ResponseIdentifier.PAYMENT_ID),
             ),
-            PaymentServerResponseMapper.map(request(), response),
+            PaymentServerResponseMapper.map(expectation(), response),
         )
     }
 
@@ -71,15 +68,14 @@ class PaymentServerResponseMapperTest {
             PaymentServerCallResult.Unsuccessful(
                 PaymentServerClientFailure.IdentifierMismatch(ResponseIdentifier.IDEMPOTENCY_KEY),
             ),
-            PaymentServerResponseMapper.map(request(), response),
+            PaymentServerResponseMapper.map(expectation(), response),
         )
     }
 
-    private fun request() =
-        PaymentServerRequest(
+    private fun expectation() =
+        PaymentServerResponseExpectation(
             paymentId = PaymentId(PAYMENT_ID),
             idempotencyKey = IdempotencyKey(IDEMPOTENCY_KEY),
-            amount = PaymentAmount(Money(300, CurrencyCode.TRY)),
         )
 
     private fun response(

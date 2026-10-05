@@ -4,14 +4,19 @@ import android.os.RemoteException
 import com.paynexus.payment.contract.PaymentRequestParcel
 import com.paynexus.payment.contract.PaymentResultParcel
 import com.paynexus.payment.domain.DeclineReason
+import com.paynexus.payment.domain.IdempotencyKey
 import com.paynexus.payment.domain.PaymentFailure
+import com.paynexus.payment.domain.PaymentId
 import com.paynexus.payment.domain.PaymentOutcome
 import com.paynexus.paymentservice.paymentserver.PaymentServerCallResult
 import com.paynexus.paymentservice.paymentserver.PaymentServerClient
 import com.paynexus.paymentservice.paymentserver.PaymentServerClientFailure
+import com.paynexus.paymentservice.paymentserver.PaymentServerLookupResult
 import com.paynexus.paymentservice.paymentserver.PaymentServerRequest
 import com.paynexus.paymentservice.paymentserver.ResponseIdentifier
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -107,7 +112,7 @@ class PaymentExecutionCoordinatorTest {
             listOf(
                 PaymentServerClientFailure.InvalidRequest,
                 PaymentServerClientFailure.UnexpectedHttpStatus(500),
-                PaymentServerClientFailure.MalformedResponse,
+                PaymentServerClientFailure.MalformedResponse(200),
                 PaymentServerClientFailure.InvalidOutcome,
                 PaymentServerClientFailure.IdentifierMismatch(ResponseIdentifier.PAYMENT_ID),
                 PaymentServerClientFailure.Transport,
@@ -123,6 +128,216 @@ class PaymentExecutionCoordinatorTest {
                 assertEquals(PaymentExecutionTerminal.TechnicalFailure, callback.singleTerminal())
             }
             assertEquals(failures.size, client.requests.size)
+        } finally {
+            coordinator.shutdown()
+        }
+    }
+
+    @Test
+    fun `lookup eligibility policy is exhaustive and status aware`() {
+        val eligible =
+            listOf(
+                PaymentServerClientFailure.Transport,
+                PaymentServerClientFailure.UnexpectedHttpStatus(500),
+                PaymentServerClientFailure.UnexpectedHttpStatus(599),
+                PaymentServerClientFailure.MalformedResponse(200),
+                PaymentServerClientFailure.InvalidOutcome,
+                PaymentServerClientFailure.IdentifierMismatch(ResponseIdentifier.PAYMENT_ID),
+            )
+        val ineligible =
+            listOf(
+                PaymentServerClientFailure.InvalidRequest,
+                PaymentServerClientFailure.IdempotencyConflict,
+                PaymentServerClientFailure.UnexpectedHttpStatus(399),
+                PaymentServerClientFailure.UnexpectedHttpStatus(400),
+                PaymentServerClientFailure.UnexpectedHttpStatus(409),
+                PaymentServerClientFailure.UnexpectedHttpStatus(600),
+                PaymentServerClientFailure.MalformedResponse(400),
+                PaymentServerClientFailure.MalformedResponse(409),
+            )
+
+        eligible.forEach { assertTrue(it.isLookupEligible(), it.toString()) }
+        ineligible.forEach { assertFalse(it.isLookupEligible(), it.toString()) }
+    }
+
+    @Test
+    fun `noneligible submit results never start lookup`() {
+        val failures =
+            listOf(
+                PaymentServerClientFailure.InvalidRequest,
+                PaymentServerClientFailure.IdempotencyConflict,
+                PaymentServerClientFailure.UnexpectedHttpStatus(404),
+                PaymentServerClientFailure.MalformedResponse(400),
+                PaymentServerClientFailure.MalformedResponse(409),
+            )
+
+        failures.forEach { failure ->
+            val client = RecordingClient { PaymentServerCallResult.Unsuccessful(failure) }
+            val coordinator = PaymentExecutionCoordinator(client)
+            try {
+                val callback = RecordingCallback()
+                coordinator.submit(request(), callback.callback)
+                callback.await()
+                assertEquals(PaymentExecutionTerminal.TechnicalFailure, callback.singleTerminal())
+                assertEquals(1, client.requests.size, failure.toString())
+                assertEquals(0, client.lookups.size, failure.toString())
+            } finally {
+                coordinator.shutdown()
+            }
+        }
+    }
+
+    @Test
+    fun `each eligible submit failure performs one lookup and can restore result`() {
+        val failures =
+            listOf(
+                PaymentServerClientFailure.Transport,
+                PaymentServerClientFailure.UnexpectedHttpStatus(500),
+                PaymentServerClientFailure.MalformedResponse(200),
+                PaymentServerClientFailure.InvalidOutcome,
+                PaymentServerClientFailure.IdentifierMismatch(ResponseIdentifier.IDEMPOTENCY_KEY),
+            )
+
+        failures.forEach { failure ->
+            val client =
+                RecordingClient(
+                    result = { PaymentServerCallResult.Unsuccessful(failure) },
+                    lookupResult = { _, _ -> PaymentServerLookupResult.Found(PaymentOutcome.Approved) },
+                )
+            val coordinator = PaymentExecutionCoordinator(client)
+            try {
+                val callback = RecordingCallback()
+                coordinator.submit(request(), callback.callback)
+                callback.await()
+                assertEquals(
+                    PaymentExecutionTerminal.Result(PaymentResultParcel(PAYMENT_ID, IDEMPOTENCY_KEY, 1, 0)),
+                    callback.singleTerminal(),
+                )
+                assertEquals(1, client.requests.size, failure.toString())
+                assertEquals(1, client.lookups.size, failure.toString())
+                assertEquals(
+                    PAYMENT_ID,
+                    client.lookups
+                        .single()
+                        .first.value,
+                )
+                assertEquals(
+                    IDEMPOTENCY_KEY,
+                    client.lookups
+                        .single()
+                        .second.value,
+                )
+            } finally {
+                coordinator.shutdown()
+            }
+        }
+    }
+
+    @Test
+    fun `unresolved lookup results produce one technical terminal without another request`() {
+        val lookupResults =
+            listOf(
+                PaymentServerLookupResult.NotFound,
+                PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.Transport),
+                PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse(404)),
+                PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.UnexpectedHttpStatus(500)),
+            )
+
+        lookupResults.forEach { lookupResult ->
+            val client =
+                RecordingClient(
+                    result = { PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.Transport) },
+                    lookupResult = { _, _ -> lookupResult },
+                )
+            val coordinator = PaymentExecutionCoordinator(client)
+            try {
+                val callback = RecordingCallback()
+                coordinator.submit(request(), callback.callback)
+                callback.await()
+                assertEquals(PaymentExecutionTerminal.TechnicalFailure, callback.singleTerminal())
+                assertEquals(1, client.requests.size)
+                assertEquals(1, client.lookups.size)
+            } finally {
+                coordinator.shutdown()
+            }
+        }
+    }
+
+    @Test
+    fun `unexpected lookup exception does not start a second lookup`() {
+        val client =
+            RecordingClient(
+                result = { PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.Transport) },
+                lookupResult = { _, _ -> error("synthetic lookup details") },
+            )
+        val coordinator = PaymentExecutionCoordinator(client)
+        val callback = RecordingCallback()
+        try {
+            coordinator.submit(request(), callback.callback)
+            callback.await()
+            assertEquals(PaymentExecutionTerminal.TechnicalFailure, callback.singleTerminal())
+            assertEquals(1, client.requests.size)
+            assertEquals(1, client.lookups.size)
+        } finally {
+            coordinator.shutdown()
+        }
+    }
+
+    @Test
+    fun `shutdown after submit ambiguity but before resolution prevents lookup`() {
+        val client = BlockingSubmitResolutionClient()
+        val coordinator = PaymentExecutionCoordinator(client)
+        val callback = RecordingCallback()
+        coordinator.submit(request(), callback.callback)
+        client.awaitSubmitStarted()
+
+        coordinator.shutdown()
+        client.releaseSubmit()
+        client.awaitSubmitFinished()
+
+        assertEquals(1, client.submitCount.get())
+        assertEquals(0, client.lookupCount.get())
+        assertTrue(callback.terminals.isEmpty())
+        assertEquals(1, client.closeCount.get())
+    }
+
+    @Test
+    fun `shutdown during lookup prevents late result delivery`() {
+        val client = BlockingLookupClient()
+        val coordinator = PaymentExecutionCoordinator(client)
+        val callback = RecordingCallback()
+        coordinator.submit(request(), callback.callback)
+        client.awaitLookupStarted()
+
+        coordinator.shutdown()
+        client.releaseLookup()
+        client.awaitLookupFinished()
+
+        assertEquals(1, client.submitCount.get())
+        assertEquals(1, client.lookupCount.get())
+        assertTrue(callback.terminals.isEmpty())
+        assertEquals(1, client.closeCount.get())
+    }
+
+    @Test
+    fun `lookup cancellation does not fabricate a terminal outcome`() {
+        val lookupStarted = CountDownLatch(1)
+        val client =
+            RecordingClient(
+                result = { PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.Transport) },
+                lookupResult = { _, _ ->
+                    lookupStarted.countDown()
+                    throw CancellationException("synthetic lookup cancellation")
+                },
+            )
+        val coordinator = PaymentExecutionCoordinator(client)
+        val callback = RecordingCallback()
+        try {
+            coordinator.submit(request(), callback.callback)
+            assertTrue(lookupStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(callback.terminals.isEmpty())
+            assertEquals(1, client.requests.size)
+            assertEquals(1, client.lookups.size)
         } finally {
             coordinator.shutdown()
         }
@@ -150,6 +365,7 @@ class PaymentExecutionCoordinatorTest {
             first.await()
             second.await()
             assertEquals(listOf("payment-1", "payment-2"), client.requests.map { it.paymentId.value })
+            assertEquals(0, client.lookupCount.get())
             assertEquals(1, rejected.terminals.size)
         } finally {
             client.release()
@@ -167,6 +383,7 @@ class PaymentExecutionCoordinatorTest {
             callback.await()
             assertEquals(1, callback.attempts.get())
             assertEquals(1, client.requests.size)
+            assertEquals(0, client.lookups.size)
         } finally {
             coordinator.shutdown()
         }
@@ -196,6 +413,7 @@ class PaymentExecutionCoordinatorTest {
             callback.await()
             assertEquals(1, callback.attempts.get())
             assertEquals(1, client.requests.size)
+            assertEquals(1, client.lookups.size)
         } finally {
             coordinator.shutdown()
         }
@@ -247,6 +465,7 @@ class PaymentExecutionCoordinatorTest {
             coordinator.submit(request(), callback.callback)
             callback.await()
             assertEquals(PaymentExecutionTerminal.TechnicalFailure, callback.singleTerminal())
+            assertEquals(0, client.lookups.size)
         } finally {
             coordinator.shutdown()
         }
@@ -272,6 +491,28 @@ class PaymentExecutionCoordinatorTest {
         }
     }
 
+    @Test
+    fun `cancellation between submit and lookup prevents resolution`() {
+        val submitFinished = CountDownLatch(1)
+        val client =
+            RecordingClient {
+                currentCoroutineContext().cancel()
+                submitFinished.countDown()
+                PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.Transport)
+            }
+        val coordinator = PaymentExecutionCoordinator(client)
+        val callback = RecordingCallback()
+        try {
+            coordinator.submit(request(), callback.callback)
+            assertTrue(submitFinished.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(callback.terminals.isEmpty())
+            assertEquals(1, client.requests.size)
+            assertEquals(0, client.lookups.size)
+        } finally {
+            coordinator.shutdown()
+        }
+    }
+
     private fun assertRequest(
         request: PaymentServerRequest,
         amount: Long,
@@ -288,9 +529,13 @@ class PaymentExecutionCoordinatorTest {
     ) = PaymentRequestParcel(paymentId, IDEMPOTENCY_KEY, amount, "TRY")
 
     private class RecordingClient(
-        private val result: (PaymentServerRequest) -> PaymentServerCallResult,
+        private val lookupResult: suspend (PaymentId, IdempotencyKey) -> PaymentServerLookupResult = { _, _ ->
+            PaymentServerLookupResult.NotFound
+        },
+        private val result: suspend (PaymentServerRequest) -> PaymentServerCallResult,
     ) : PaymentServerClient {
         val requests = CopyOnWriteArrayList<PaymentServerRequest>()
+        val lookups = CopyOnWriteArrayList<Pair<PaymentId, IdempotencyKey>>()
         val threadNames = CopyOnWriteArrayList<String>()
         val closeCount = AtomicInteger()
 
@@ -298,6 +543,15 @@ class PaymentExecutionCoordinatorTest {
             requests += request
             threadNames += Thread.currentThread().name
             return result(request)
+        }
+
+        override suspend fun lookup(
+            paymentId: PaymentId,
+            idempotencyKey: IdempotencyKey,
+        ): PaymentServerLookupResult {
+            lookups += paymentId to idempotencyKey
+            threadNames += Thread.currentThread().name
+            return lookupResult(paymentId, idempotencyKey)
         }
 
         override fun close() {
@@ -310,6 +564,7 @@ class PaymentExecutionCoordinatorTest {
     ) : PaymentServerClient {
         val requests = CopyOnWriteArrayList<PaymentServerRequest>()
         val threadNames = CopyOnWriteArrayList<String>()
+        val lookupCount = AtomicInteger()
         val closeCount = AtomicInteger()
         private val started = CountDownLatch(1)
         private val release = CountDownLatch(1)
@@ -324,6 +579,14 @@ class PaymentExecutionCoordinatorTest {
             }
             finished.countDown()
             return PaymentServerCallResult.Completed(PaymentOutcome.Approved)
+        }
+
+        override suspend fun lookup(
+            paymentId: PaymentId,
+            idempotencyKey: IdempotencyKey,
+        ): PaymentServerLookupResult {
+            lookupCount.incrementAndGet()
+            error("Lookup was not expected.")
         }
 
         override fun close() {
@@ -352,6 +615,76 @@ class PaymentExecutionCoordinatorTest {
                 }
             }
         }
+    }
+
+    private class BlockingSubmitResolutionClient : PaymentServerClient {
+        val submitCount = AtomicInteger()
+        val lookupCount = AtomicInteger()
+        val closeCount = AtomicInteger()
+        private val submitStarted = CountDownLatch(1)
+        private val releaseSubmit = CountDownLatch(1)
+        private val submitFinished = CountDownLatch(1)
+
+        override suspend fun submit(request: PaymentServerRequest): PaymentServerCallResult {
+            submitCount.incrementAndGet()
+            submitStarted.countDown()
+            awaitIgnoringInterrupts(releaseSubmit)
+            submitFinished.countDown()
+            return PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.Transport)
+        }
+
+        override suspend fun lookup(
+            paymentId: PaymentId,
+            idempotencyKey: IdempotencyKey,
+        ): PaymentServerLookupResult {
+            lookupCount.incrementAndGet()
+            return PaymentServerLookupResult.Found(PaymentOutcome.Approved)
+        }
+
+        override fun close() {
+            closeCount.incrementAndGet()
+        }
+
+        fun awaitSubmitStarted() = assertTrue(submitStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+
+        fun releaseSubmit() = releaseSubmit.countDown()
+
+        fun awaitSubmitFinished() = assertTrue(submitFinished.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+    }
+
+    private class BlockingLookupClient : PaymentServerClient {
+        val submitCount = AtomicInteger()
+        val lookupCount = AtomicInteger()
+        val closeCount = AtomicInteger()
+        private val lookupStarted = CountDownLatch(1)
+        private val releaseLookup = CountDownLatch(1)
+        private val lookupFinished = CountDownLatch(1)
+
+        override suspend fun submit(request: PaymentServerRequest): PaymentServerCallResult {
+            submitCount.incrementAndGet()
+            return PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.Transport)
+        }
+
+        override suspend fun lookup(
+            paymentId: PaymentId,
+            idempotencyKey: IdempotencyKey,
+        ): PaymentServerLookupResult {
+            lookupCount.incrementAndGet()
+            lookupStarted.countDown()
+            awaitIgnoringInterrupts(releaseLookup)
+            lookupFinished.countDown()
+            return PaymentServerLookupResult.Found(PaymentOutcome.Approved)
+        }
+
+        override fun close() {
+            closeCount.incrementAndGet()
+        }
+
+        fun awaitLookupStarted() = assertTrue(lookupStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+
+        fun releaseLookup() = releaseLookup.countDown()
+
+        fun awaitLookupFinished() = assertTrue(lookupFinished.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
     }
 
     private class RecordingCallback {
@@ -392,5 +725,16 @@ class PaymentExecutionCoordinatorTest {
         const val PAYMENT_ID = " Mixed-Case Payment-ID "
         const val IDEMPOTENCY_KEY = " Mixed-Case Idempotency-Key "
         const val TIMEOUT_SECONDS = 5L
+    }
+}
+
+private fun awaitIgnoringInterrupts(latch: CountDownLatch) {
+    while (true) {
+        try {
+            latch.await()
+            return
+        } catch (_: InterruptedException) {
+            // Tests deliberately model a downstream operation completing after local shutdown.
+        }
     }
 }

@@ -6,12 +6,12 @@ import com.paynexus.payment.domain.PaymentOutcome
 
 internal object PaymentServerResponseMapper {
     fun map(
-        request: PaymentServerRequest,
+        expectation: PaymentServerResponseExpectation,
         response: PaymentServerResponseDto,
     ): PaymentServerCallResult =
         when {
-            response.paymentId != request.paymentId.value -> failure(ResponseIdentifier.PAYMENT_ID)
-            response.idempotencyKey != request.idempotencyKey.value -> failure(ResponseIdentifier.IDEMPOTENCY_KEY)
+            response.paymentId != expectation.paymentId.value -> failure(ResponseIdentifier.PAYMENT_ID)
+            response.idempotencyKey != expectation.idempotencyKey.value -> failure(ResponseIdentifier.IDEMPOTENCY_KEY)
             else -> mapOutcome(response)
         }
 

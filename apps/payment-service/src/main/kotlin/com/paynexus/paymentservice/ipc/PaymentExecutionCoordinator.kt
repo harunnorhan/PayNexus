@@ -5,8 +5,12 @@ import com.paynexus.payment.contract.PaymentRequestParcel
 import com.paynexus.payment.contract.PaymentResultParcel
 import com.paynexus.paymentservice.paymentserver.PaymentServerCallResult
 import com.paynexus.paymentservice.paymentserver.PaymentServerClient
+import com.paynexus.paymentservice.paymentserver.PaymentServerClientFailure
+import com.paynexus.paymentservice.paymentserver.PaymentServerLookupResult
 import com.paynexus.paymentservice.paymentserver.PaymentServerRequest
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -106,19 +110,8 @@ internal class PaymentExecutionCoordinator(
                         idempotencyKey = request.idempotencyKey,
                         amount = request.amount,
                     )
-                when (val result = runBlocking { configuredClient.submit(serverRequest) }) {
-                    is PaymentServerCallResult.Completed -> {
-                        callback.deliver(
-                            PaymentExecutionTerminal.Result(
-                                PaymentTransportMapper.result(request, result.outcome),
-                            ),
-                        )
-                    }
-
-                    is PaymentServerCallResult.Unsuccessful -> {
-                        callback.deliver(PaymentExecutionTerminal.TechnicalFailure)
-                    }
-                }
+                val terminal = runBlocking { execute(configuredClient, serverRequest) }
+                if (terminal != null) callback.deliver(terminal)
             } catch (_: CancellationException) {
                 // Cancellation is terminal locally and never manufactures a payment outcome.
             } catch (_: InterruptedException) {
@@ -137,6 +130,54 @@ internal class PaymentExecutionCoordinator(
         fun abandon() {
             callback.abandon()
         }
+
+        private suspend fun execute(
+            configuredClient: PaymentServerClient,
+            serverRequest: PaymentServerRequest,
+        ): PaymentExecutionTerminal? =
+            when (val result = configuredClient.submit(serverRequest)) {
+                is PaymentServerCallResult.Completed -> {
+                    result.toTerminal()
+                }
+
+                is PaymentServerCallResult.Unsuccessful -> {
+                    resolveIfEligible(configuredClient, serverRequest, result.failure)
+                }
+            }
+
+        private suspend fun resolveIfEligible(
+            configuredClient: PaymentServerClient,
+            serverRequest: PaymentServerRequest,
+            failure: PaymentServerClientFailure,
+        ): PaymentExecutionTerminal? =
+            if (!failure.isLookupEligible()) {
+                PaymentExecutionTerminal.TechnicalFailure
+            } else {
+                currentCoroutineContext().ensureActive()
+                if (!callback.isOwned) {
+                    null
+                } else {
+                    when (
+                        val lookup =
+                            configuredClient.lookup(
+                                paymentId = serverRequest.paymentId,
+                                idempotencyKey = serverRequest.idempotencyKey,
+                            )
+                    ) {
+                        is PaymentServerLookupResult.Found -> lookup.toTerminal()
+
+                        PaymentServerLookupResult.NotFound,
+                        is PaymentServerLookupResult.Unsuccessful,
+                        -> PaymentExecutionTerminal.TechnicalFailure
+                    }
+                }
+            }
+
+        private fun PaymentServerCallResult.Completed.toTerminal(): PaymentExecutionTerminal.Result =
+            PaymentExecutionTerminal.Result(PaymentTransportMapper.result(request, outcome))
+
+        private fun PaymentServerLookupResult.Found.toTerminal(): PaymentExecutionTerminal.Result =
+            PaymentExecutionTerminal.Result(PaymentTransportMapper.result(request, outcome))
     }
 
     private class CallbackOwnership(
@@ -165,3 +206,24 @@ internal class PaymentExecutionCoordinator(
         const val WORKER_NAME = "paynexus-payment-server"
     }
 }
+
+internal fun PaymentServerClientFailure.isLookupEligible(): Boolean =
+    when (this) {
+        PaymentServerClientFailure.Transport -> true
+
+        is PaymentServerClientFailure.UnexpectedHttpStatus -> statusCode in HTTP_SERVER_ERROR_MIN..HTTP_SERVER_ERROR_MAX
+
+        is PaymentServerClientFailure.MalformedResponse -> statusCode == HTTP_OK
+
+        PaymentServerClientFailure.InvalidOutcome,
+        is PaymentServerClientFailure.IdentifierMismatch,
+        -> true
+
+        PaymentServerClientFailure.InvalidRequest,
+        PaymentServerClientFailure.IdempotencyConflict,
+        -> false
+    }
+
+private const val HTTP_OK = 200
+private const val HTTP_SERVER_ERROR_MIN = 500
+private const val HTTP_SERVER_ERROR_MAX = 599

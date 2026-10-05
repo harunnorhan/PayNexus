@@ -28,10 +28,13 @@ PNX-022 adds pure server-domain idempotency tests, file-backed SQLite integratio
 tests, and Ktor replay/conflict/internal-error tests. Automated IPC integration,
 tests, and Ktor replay/conflict/internal-error tests. PNX-023 adds file-backed
 SQLite lookup, corruption, reconstruction, and read-only evidence plus in-process
-Ktor lookup-contract tests. Automated IPC integration, live Android
+Ktor lookup-contract tests. PNX-024 adds Payment Service MockEngine lookup tests
+and deterministic coordinator outcome-resolution tests with exact POST/GET call
+counts, status-aware eligibility, callback ownership, and shutdown coverage.
+Automated IPC integration, live Android
 Service-to-Server transport, and end-to-end test infrastructure remain future
-work. PNX-011 through PNX-022 sections below preserve historical procedures and
-evidence; they do not establish PNX-023 verification.
+work. PNX-011 through PNX-023 sections below preserve historical procedures and
+evidence; they do not establish PNX-024 verification.
 
 ## Philosophy and Naming
 
@@ -659,6 +662,58 @@ payment-ID lookup, list/history/search, an Android lookup consumer, polling,
 retry, recovery lookup, authentication, or authorization. Runtime/manual
 end-to-end verification remains **DEFERRED**, and remote CI remains **NOT RUN**
 until later authorized Git and Pull Request work.
+
+## Payment Service Outcome Resolution Verification (PNX-024)
+
+PNX-024 extends the Payment Service JVM tests without real sockets or Android
+runtime interaction. Ktor MockEngine tests preserve the complete POST regression
+suite and cover exact HTTP 409 conflict classification, status-aware malformed 400
+and 409 responses, the exact lookup method/path/header, absence of a payment JSON
+body, all supported outcomes, strict response correlation, malformed and invalid
+responses, exact 404 `PAYMENT_NOT_FOUND`, lookup HTTP failures, transport failure,
+and cancellation propagation.
+
+Coordinator tests use handwritten clients, atomic POST/GET counters, and
+deterministic latches. They verify the exhaustive typed eligibility policy,
+exactly one POST maximum, zero or one GET maximum, outcome restoration from
+`Found`, technical uncertainty for `NotFound` and unsuccessful lookup, arbitrary
+exception behavior, cancellation, callback ownership before lookup, shutdown
+during lookup, worker saturation, missing configuration, client close ownership,
+and at-most-one terminal callback attempt. No correctness test uses an arbitrary
+sleep.
+
+Use JDK 17 and SDK Platform 37 from the repository root:
+
+```bash
+./gradlew :apps:payment-service:test --rerun-tasks
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :apps:payment-service:assembleRelease
+./gradlew :apps:payment-service:lint
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew :payment:domain:test --rerun-tasks
+./gradlew :apps:merchant:test --rerun-tasks
+./gradlew :server:application:test --rerun-tasks
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :apps:payment-service:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+```
+
+Inspect XML/HTML reports for exact test counts and execution state. Inspect source,
+diffs, manifests, and dependency graphs for zero POST retry/replay, at most one
+lookup, non-eligible exact or malformed 409 responses, unchanged IPC V3, unchanged
+Merchant and server production code, unchanged Android networking, no new
+dependency, integer-only money, and absence of sensitive logging or secrets.
+
+The implementation has no explicit request, connect, socket, or overall outcome-
+resolution timeout. A stalled request can occupy the single Service worker. PNX-024
+does not add Payment Service persistence, polling, repeated lookup, authentication,
+or reconciliation. Runtime/device/manual end-to-end verification remains
+**DEFERRED**, and remote CI remains **NOT RUN** until later authorized Git and Pull
+Request work.
 
 ## IPC Contract Foundation Verification
 

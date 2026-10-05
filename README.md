@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, strict V3 asynchronous payment IPC contract, versioned Ktor Payment Server payment API, and bounded Payment Service-to-Server orchestration are implemented; Android runtime and end-to-end verification remain pending.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, strict V3 asynchronous payment IPC contract, versioned Ktor Payment Server payment API, bounded Payment Service-to-Server orchestration, and selected ambiguous-outcome resolution are implemented; Android runtime and end-to-end verification remain pending.
 
 ## Documentation
 
@@ -258,6 +258,29 @@ unchanged. Lookup is by durable idempotency key only; there is no payment-ID
 lookup, list, history, search, or Android lookup consumer. Authentication and
 authorization remain outside this portfolio task, and runtime/manual end-to-end
 verification remains deferred.
+
+### Payment Service Outcome Resolution (PNX-024)
+
+After exactly one admitted `POST /v1/payments`, selected ambiguous failures may
+trigger exactly one read-only `GET /v1/payments` using the original exact
+idempotency key. Transport failure, HTTP 5xx, and selected malformed, invalid, or
+mis-correlated HTTP 200 responses are eligible. A strictly decoded and exactly
+correlated lookup response can restore the confirmed business outcome through the
+existing IPC V3 result path.
+
+The Payment Service never automatically retries or replays the POST. Invalid
+requests, unexpected non-5xx statuses, and every HTTP 409 response are not eligible
+for lookup. This includes malformed or unexpected 409 bodies: the lookup response
+does not contain the original amount, so it cannot prove that a stored result
+belongs to a conflicting request intent. Lookup `NotFound` and every unsuccessful
+lookup remain `PAYMENT_OUTCOME_UNAVAILABLE`; there is no polling or repeated GET.
+
+The existing Service-owned worker, bounded queue, callback ownership, reusable
+Ktor client, and fail-closed release configuration remain unchanged. IPC V3,
+Merchant production code, Payment Server production code and schema, Android
+network configuration, and Gradle dependencies are unchanged. No explicit HTTP
+timeout policy is introduced. Runtime/manual end-to-end verification remains
+deferred.
 
 ### Design System Foundation
 

@@ -300,6 +300,37 @@ semantics remain unchanged. The endpoint has no Android consumer, and no payment
 lookup, list, history, search, authentication, or authorization is introduced.
 Runtime/manual end-to-end verification remains deferred.
 
+### Payment Service Outcome Resolution (PNX-024)
+
+`:apps:payment-service` extends its internal `PaymentServerClient` with a typed
+lookup that uses the existing client, engine, endpoint configuration, and lifetime.
+For one admitted work item, `PaymentExecutionCoordinator` still performs exactly
+one POST maximum. Only a typed ambiguous POST failure may lead to one exact-key
+`GET /v1/payments`; no path performs another POST, a repeated GET, polling, or
+backoff.
+
+Transport failure, HTTP 5xx, and malformed, invalid-outcome, or identifier-
+mismatched HTTP 200 responses are lookup-eligible. Invalid request, unexpected
+non-5xx status, and every HTTP 409 response are not. Malformed responses retain
+their HTTP status so malformed 400 and 409 bodies cannot become eligible through a
+generic protocol or transport category. Exact HTTP 409 `IDEMPOTENCY_CONFLICT`
+receives a dedicated internal classification. Because lookup omits the original
+amount, no 409 response can safely resolve a conflicting intent.
+
+Lookup HTTP 200 reuses the POST response mapper for strict JSON, exact payment-ID
+and idempotency-key correlation, and outcome/reason validation. Only exact HTTP 404
+`PAYMENT_NOT_FOUND` becomes typed `NotFound`; malformed 404, HTTP failures, and
+transport failures remain unsuccessful. `Found` can use the existing V3 result
+callback, while every unresolved lookup uses the existing outcome-unavailable
+technical terminal.
+
+The single bounded Service worker executes POST and optional GET sequentially.
+Callback ownership is checked before lookup and remains authoritative during
+shutdown and late completion. IPC V3, Merchant, server production code and schema,
+Android networking configuration, and dependencies are unchanged. No explicit
+HTTP timeout exists; timeout policy and runtime/manual end-to-end verification
+remain deferred.
+
 ## Dependency Direction
 
 The intended dependency direction is:

@@ -282,6 +282,29 @@ network configuration, and Gradle dependencies are unchanged. No explicit HTTP
 timeout policy is introduced. Runtime/manual end-to-end verification remains
 deferred.
 
+### Payment Service HTTP Timeout Semantics (PNX-025)
+
+Every Payment Service call to the Payment Server now uses the existing reusable
+Ktor client with an explicit 5,000 ms request timeout. The policy applies
+independently to `POST /v1/payments` and the optional `GET /v1/payments` durable
+lookup. No separate connect or socket timeout is configured.
+
+Request-deadline expiry is an internal typed timeout, distinct from coroutine or
+lifecycle cancellation and from generic transport failure. Cancellation continues
+to propagate as local control flow. A timed-out POST is ambiguous because the
+server may already have committed the payment, so it is eligible for the existing
+single read-only lookup. A timed-out lookup remains unresolved and maps through
+IPC V3 to `PAYMENT_OUTCOME_UNAVAILABLE`.
+
+There is no automatic POST retry or replay, repeated lookup, polling, or backoff.
+A POST timeout followed by one lookup may consume approximately 10 seconds of
+sequential HTTP request-time budget. This excludes queue wait, worker scheduling,
+cancellation timing, and small timeout overhead and is not a global transaction
+SLA. The one-worker, one-item queue and `AbortPolicy` remain unchanged, as do IPC
+V3, Merchant production code, Payment Server production code and schema, and
+Android network configuration. Runtime/manual end-to-end verification remains
+deferred.
+
 ### Design System Foundation
 
 `design-system` provides the provisional Compose theme, compact spacing tokens,

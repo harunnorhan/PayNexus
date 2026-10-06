@@ -31,10 +31,12 @@ SQLite lookup, corruption, reconstruction, and read-only evidence plus in-proces
 Ktor lookup-contract tests. PNX-024 adds Payment Service MockEngine lookup tests
 and deterministic coordinator outcome-resolution tests with exact POST/GET call
 counts, status-aware eligibility, callback ownership, and shutdown coverage.
+PNX-025 adds deterministic request-timeout capability, classification, and
+outcome-resolution coverage for the existing Payment Service client and worker.
 Automated IPC integration, live Android
 Service-to-Server transport, and end-to-end test infrastructure remain future
-work. PNX-011 through PNX-023 sections below preserve historical procedures and
-evidence; they do not establish PNX-024 verification.
+work. PNX-011 through PNX-024 sections below preserve historical procedures and
+evidence; they do not establish PNX-025 verification.
 
 ## Philosophy and Naming
 
@@ -714,6 +716,102 @@ does not add Payment Service persistence, polling, repeated lookup, authenticati
 or reconciliation. Runtime/device/manual end-to-end verification remains
 **DEFERRED**, and remote CI remains **NOT RUN** until later authorized Git and Pull
 Request work.
+
+## Payment Service HTTP Timeout Verification (PNX-025)
+
+PNX-025 keeps timeout verification inside the Payment Service JVM test layer. The
+production-equivalent engine-backed factory exposes the configured Ktor request
+capability to MockEngine and verifies that both POST and GET receive exactly
+`5_000` ms from the same client configuration. Timeout behavior uses a short
+internal test value and a suspending MockEngine handler that waits for
+cancellation; it does not use `Thread.sleep`, real sockets, or a five-second test
+delay.
+
+Client tests distinguish `HttpRequestTimeoutException` from generic transport
+exceptions and direct coroutine cancellation for both POST and lookup. Handler
+entry counters verify one client operation causes at most one HTTP execution and
+that no retry plugin is active. The complete PNX-024 response-status, decoding,
+identifier-correlation, 409, and lookup contract suite remains regression
+coverage.
+
+Coordinator tests treat POST timeout as eligible for exactly one lookup. They
+cover lookup `Found`, `NotFound`, timeout, and transport failure with exact POST
+and GET counts. Existing tests continue to cover non-eligible 409 and invalid
+requests, worker saturation, missing configuration, callback abandonment,
+shutdown, cancellation, and at-most-one terminal callback attempt.
+
+A normal HTTP call has approximately five seconds of request-time budget. A POST
+timeout followed by the one permitted lookup may use approximately ten seconds of
+sequential HTTP request-time budget. This excludes local queue wait, worker
+scheduling, cancellation timing, and timeout overhead and is not an end-to-end
+transaction SLA. There is no separate connect/socket tuning, POST retry/replay,
+repeated lookup, polling, or backoff.
+
+Use JDK 17 and SDK Platform 37 from the repository root:
+
+```bash
+./gradlew :apps:payment-service:test --rerun-tasks
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :apps:payment-service:assembleRelease
+./gradlew :apps:payment-service:lint
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew :payment:domain:test --rerun-tasks
+./gradlew :apps:merchant:test --rerun-tasks
+./gradlew :server:application:test --rerun-tasks
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :apps:payment-service:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+```
+
+Inspect XML/HTML reports for exact counts and outcomes. Inspect source, diffs,
+manifests, and dependency graphs for the exact production timeout, POST/GET
+capabilities, timeout/transport/cancellation separation, bounded call counts,
+unchanged 409 behavior, callback ownership, unchanged worker and queue, absence of
+new dependencies, unchanged IPC V3, and no Merchant, Payment Server production,
+schema, manifest, or network-security changes. Runtime/device/manual end-to-end
+verification remains **DEFERRED**, and remote CI remains **NOT RUN** until later
+authorized Git and Pull Request work.
+
+### PNX-025 Local Non-Runtime Verification Record
+
+On 2026-10-06, Codex completed the approved local non-runtime verification on
+`feature/PNX-025-payment-service-http-timeout`:
+
+- the final fresh Payment Service test run executed 58 tests: 26 Ktor client,
+  22 coordinator, 6 transport-mapper, and 4 response-mapper tests, with zero
+  failures, errors, or skips;
+- fresh regression runs executed 14 payment-contract, 26 payment-domain,
+  119 Merchant, and 32 server-application tests, all with zero failures, errors,
+  or skips;
+- Payment Service debug/release assembly and lint passed, as did final repository
+  `spotlessCheck`, `detekt`, `qualityCheck`, and `build`; `qualityCheck` reported
+  190 actionable tasks and `build` reported 433;
+- MockEngine capability inspection observed exactly `5_000` ms for POST and GET,
+  short suspended-handler tests classified each deadline as the typed timeout,
+  and handler counters remained one for each direct call;
+- coordinator coverage confirmed timeout lookup eligibility, one POST and one GET
+  for all four timeout-resolution cases, unresolved lookup timeout behavior, and
+  unchanged non-eligible 409, callback ownership, saturation, missing-client,
+  cancellation, and shutdown semantics; and
+- debug/release runtime graphs retained the existing Ktor 3.6.0 client stack and
+  project dependencies with no new dependency. Source and diff inspection found
+  no Merchant, AIDL, Payment Server production/schema, manifest, network-security,
+  Gradle, or CI change and no sensitive logging, secrets, floating-point money,
+  POST retry/replay, repeated lookup, polling, backoff, or separate connect/socket
+  tuning.
+
+Initial verification found one test assertion type-inference error, two Spotless
+layout findings, two Detekt `ReturnCount` findings, and one Detekt
+`TooManyFunctions` finding. Each was fixed in source without suppression, baseline,
+quality-rule, compiler, test, or CI changes before the final passing runs.
+
+Runtime, device, emulator, adb, manual-network, and end-to-end verification were
+not performed and remain **DEFERRED**. Remote CI was **NOT RUN**. No staging,
+commit, push, Pull Request, merge, or GitHub settings change was performed.
 
 ## IPC Contract Foundation Verification
 

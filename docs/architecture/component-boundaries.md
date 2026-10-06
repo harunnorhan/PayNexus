@@ -355,6 +355,29 @@ unchanged. Merchant, IPC V3, Payment Server production code and schema, Android
 network configuration, and Gradle dependencies are unchanged. Runtime/manual
 end-to-end verification remains deferred.
 
+### Payment Service Redirect Hardening (PNX-026)
+
+`:apps:payment-service` explicitly disables automatic HTTP redirects on its single
+reusable Ktor client. The policy applies to both `POST /v1/payments` and the
+optional `GET /v1/payments` durable lookup. HTTP 301, 302, 303, 307, and 308 are
+returned directly to the existing typed response handling as unexpected HTTP
+statuses. The client ignores `Location` and does not create a request from a
+relative, absolute, same-host, or cross-host redirect target.
+
+Redirect responses cannot create a hidden second POST or lookup GET. In
+particular, 307 and 308 cannot replay the payment-creation request through client
+redirect behavior. Submit 3xx failures remain lookup-ineligible and resolve through
+the existing IPC V3 outcome-unavailable technical terminal. No redirect allowlist,
+retry, replay, repeated lookup, endpoint-selection logic, or failure category is
+introduced.
+
+The 5,000 ms request timeout and timeout/transport/cancellation classification are
+unchanged, as are HTTP 409 safety, the single worker, queue capacity one,
+`AbortPolicy`, callback ownership, and shutdown behavior. Merchant, IPC V3,
+Payment Server production code and schema, Android networking configuration, and
+Gradle dependencies are unchanged. Runtime/manual end-to-end verification remains
+deferred.
+
 ## Dependency Direction
 
 The intended dependency direction is:

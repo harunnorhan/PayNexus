@@ -33,10 +33,13 @@ and deterministic coordinator outcome-resolution tests with exact POST/GET call
 counts, status-aware eligibility, callback ownership, and shutdown coverage.
 PNX-025 adds deterministic request-timeout capability, classification, and
 outcome-resolution coverage for the existing Payment Service client and worker.
+PNX-026 adds deterministic MockEngine redirect refusal and request-count coverage
+for Payment Service submit and lookup operations, plus explicit coordinator
+evidence that a redirect status cannot start durable lookup.
 Automated IPC integration, live Android
 Service-to-Server transport, and end-to-end test infrastructure remain future
-work. PNX-011 through PNX-024 sections below preserve historical procedures and
-evidence; they do not establish PNX-025 verification.
+work. PNX-011 through PNX-025 sections below preserve historical procedures and
+evidence; they do not establish PNX-026 verification.
 
 ## Philosophy and Naming
 
@@ -808,6 +811,85 @@ Initial verification found one test assertion type-inference error, two Spotless
 layout findings, two Detekt `ReturnCount` findings, and one Detekt
 `TooManyFunctions` finding. Each was fixed in source without suppression, baseline,
 quality-rule, compiler, test, or CI changes before the final passing runs.
+
+Runtime, device, emulator, adb, manual-network, and end-to-end verification were
+not performed and remain **DEFERRED**. Remote CI was **NOT RUN**. No staging,
+commit, push, Pull Request, merge, or GitHub settings change was performed.
+
+## Payment Service Redirect Hardening Verification (PNX-026)
+
+PNX-026 keeps redirect verification inside the Payment Service JVM test layer.
+Ktor MockEngine returns HTTP 301, 302, 303, 307, and 308 with a valid absolute
+synthetic `Location` for both submit and lookup. Each case records the requested
+URLs and handler invocation count, requires exactly one engine request, verifies
+that the redirect target is never requested, and asserts the exact existing
+`UnexpectedHttpStatus` result. The 307 and 308 submit cases therefore explicitly
+prove that client redirect behavior cannot create a second payment POST.
+
+The lookup cases are configuration-sensitive evidence because Ktor client core
+normally permits GET redirects. Coordinator regression coverage includes HTTP 307
+in the existing noneligible-submit table and requires one submit, zero lookups,
+and one technical terminal. Tests use no real socket, external network, server
+redirect route, arbitrary sleep, retry, or polling.
+
+Use JDK 17 and SDK Platform 37 from the repository root:
+
+```bash
+./gradlew :apps:payment-service:test --rerun-tasks
+./gradlew :apps:payment-service:assembleDebug
+./gradlew :apps:payment-service:assembleRelease
+./gradlew :apps:payment-service:lint
+./gradlew :payment:contract:test --rerun-tasks
+./gradlew :payment:domain:test --rerun-tasks
+./gradlew :apps:merchant:test --rerun-tasks
+./gradlew :server:application:test --rerun-tasks
+./gradlew spotlessCheck
+./gradlew detekt
+./gradlew qualityCheck
+./gradlew build
+./gradlew :apps:payment-service:dependencies --configuration debugRuntimeClasspath
+./gradlew :apps:payment-service:dependencies --configuration releaseRuntimeClasspath
+git diff --check
+```
+
+Inspect XML/HTML reports for exact test counts and outcomes. Inspect source, diffs,
+manifests, and dependency graphs for disabled automatic redirects, exact 3xx
+classification, one engine request per operation, unchanged timeout/cancellation/
+transport and HTTP 409 behavior, unchanged worker/queue/callback ownership, no new
+dependency, unchanged IPC V3, and no Merchant, Payment Server production/schema,
+manifest, or network-security changes. Runtime/device/manual end-to-end
+verification remains **DEFERRED**, and remote CI remains **NOT RUN** until later
+human-authorized Git and Pull Request work.
+
+### PNX-026 Local Non-Runtime Verification Record
+
+On 2026-10-06, Codex completed the approved local non-runtime verification on
+`feature/PNX-026-payment-service-redirect-hardening`:
+
+- the fresh Payment Service test run executed 60 tests: 28 Ktor client,
+  22 coordinator, 6 transport-mapper, and 4 response-mapper tests, with zero
+  failures, errors, or skips;
+- the submit and lookup redirect tables each exercised HTTP 301, 302, 303, 307,
+  and 308 with a valid absolute `Location`; every case observed exactly one
+  MockEngine handler invocation, never requested the redirect target, and returned
+  the exact status-bearing `UnexpectedHttpStatus` result;
+- coordinator coverage exercised submit `UnexpectedHttpStatus(307)` with one
+  submit, zero lookups, and one technical terminal;
+- fresh regression runs executed 14 payment-contract, 26 payment-domain,
+  119 Merchant, and 32 server-application tests, all with zero failures, errors,
+  or skips;
+- Payment Service debug/release assembly and lint passed, as did repository
+  `spotlessCheck`, `detekt`, `qualityCheck`, and `build`; `qualityCheck` reported
+  190 actionable tasks and `build` reported 433; and
+- debug/release runtime dependency reports retained the existing Ktor 3.6.0
+  client stack and project dependencies with no new dependency.
+
+Final source and diff inspection found no Merchant production, AIDL, Payment
+Server production/schema, manifest, network-security, Gradle, or CI change and no
+sensitive logging, secrets, floating-point money, redirect allowlist, POST
+retry/replay, repeated lookup, polling, backoff, or quality/test weakening. The
+5,000 ms timeout, cancellation propagation, HTTP 409 handling, worker/queue,
+callback ownership, and shutdown implementation remain unchanged.
 
 Runtime, device, emulator, adb, manual-network, and end-to-end verification were
 not performed and remain **DEFERRED**. Remote CI was **NOT RUN**. No staging,

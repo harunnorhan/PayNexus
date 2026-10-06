@@ -195,6 +195,38 @@ class KtorPaymentServerClientTest {
     }
 
     @Test
+    fun `submit returns every redirect without a hidden second post`() {
+        REDIRECT_STATUSES.forEach { status ->
+            val handlerEntries = AtomicInteger()
+            val requestedUrls = mutableListOf<String>()
+            val engine =
+                MockEngine { request ->
+                    requestedUrls += request.url.toString()
+                    if (handlerEntries.incrementAndGet() == 1) {
+                        respond(
+                            content = "",
+                            status = status,
+                            headers = headersOf(HttpHeaders.Location, REDIRECT_TARGET),
+                        )
+                    } else {
+                        jsonResponse(response(outcome = "APPROVED"))
+                    }
+                }
+
+            assertEquals(
+                PaymentServerCallResult.Unsuccessful(
+                    PaymentServerClientFailure.UnexpectedHttpStatus(status.value),
+                ),
+                submit(engine = engine),
+                status.toString(),
+            )
+            assertEquals(1, handlerEntries.get(), "No second POST is allowed for $status")
+            assertEquals(listOf(PAYMENT_ENDPOINT), requestedUrls, status.toString())
+            assertTrue(REDIRECT_TARGET !in requestedUrls, status.toString())
+        }
+    }
+
+    @Test
     fun `malformed success json is a protocol failure`() {
         assertEquals(
             PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.MalformedResponse(200)),
@@ -379,6 +411,38 @@ class KtorPaymentServerClientTest {
     }
 
     @Test
+    fun `lookup returns every redirect without a hidden second get`() {
+        REDIRECT_STATUSES.forEach { status ->
+            val handlerEntries = AtomicInteger()
+            val requestedUrls = mutableListOf<String>()
+            val engine =
+                MockEngine { request ->
+                    requestedUrls += request.url.toString()
+                    if (handlerEntries.incrementAndGet() == 1) {
+                        respond(
+                            content = "",
+                            status = status,
+                            headers = headersOf(HttpHeaders.Location, REDIRECT_TARGET),
+                        )
+                    } else {
+                        jsonResponse(response(outcome = "APPROVED"))
+                    }
+                }
+
+            assertEquals(
+                PaymentServerLookupResult.Unsuccessful(
+                    PaymentServerClientFailure.UnexpectedHttpStatus(status.value),
+                ),
+                lookup(engine = engine),
+                status.toString(),
+            )
+            assertEquals(1, handlerEntries.get(), "No second GET is allowed for $status")
+            assertEquals(listOf(PAYMENT_ENDPOINT), requestedUrls, status.toString())
+            assertTrue(REDIRECT_TARGET !in requestedUrls, status.toString())
+        }
+    }
+
+    @Test
     fun `lookup transport failure is unsuccessful without exposing details`() {
         val engine = MockEngine { throw IOException("synthetic lookup transport details") }
 
@@ -481,9 +545,19 @@ class KtorPaymentServerClientTest {
 
     private companion object {
         val BASE_URL = Url("https://payment-server.test")
+        val REDIRECT_STATUSES =
+            listOf(
+                HttpStatusCode.MovedPermanently,
+                HttpStatusCode.Found,
+                HttpStatusCode.SeeOther,
+                HttpStatusCode.TemporaryRedirect,
+                HttpStatusCode.PermanentRedirect,
+            )
         const val PAYMENT_ID = " Mixed-Case Payment-ID "
         const val IDEMPOTENCY_KEY = " Mixed-Case Idempotency-Key "
         const val PAYNEXUS_HEADER = "PayNexus-Idempotency-Key"
+        const val PAYMENT_ENDPOINT = "https://payment-server.test/v1/payments"
+        const val REDIRECT_TARGET = "https://redirect-target.test/replayed-payment"
         const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 5_000L
         const val TEST_REQUEST_TIMEOUT_MILLIS = 50L
     }

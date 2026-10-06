@@ -168,6 +168,7 @@ class PaymentExecutionCoordinatorTest {
             listOf(
                 PaymentServerClientFailure.InvalidRequest,
                 PaymentServerClientFailure.IdempotencyConflict,
+                PaymentServerClientFailure.UnexpectedHttpStatus(307),
                 PaymentServerClientFailure.UnexpectedHttpStatus(404),
                 PaymentServerClientFailure.MalformedResponse(400),
                 PaymentServerClientFailure.MalformedResponse(409),

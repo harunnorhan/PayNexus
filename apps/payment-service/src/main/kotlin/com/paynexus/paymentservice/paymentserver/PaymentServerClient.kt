@@ -50,6 +50,8 @@ internal sealed interface PaymentServerLookupResult {
 }
 
 internal sealed interface PaymentServerClientFailure {
+    data object Timeout : PaymentServerClientFailure
+
     data object InvalidRequest : PaymentServerClientFailure
 
     data object IdempotencyConflict : PaymentServerClientFailure

@@ -331,6 +331,30 @@ Android networking configuration, and dependencies are unchanged. No explicit
 HTTP timeout exists; timeout policy and runtime/manual end-to-end verification
 remain deferred.
 
+### Payment Service HTTP Timeout Semantics (PNX-025)
+
+`:apps:payment-service` configures its single reusable Ktor client with a 5,000 ms
+request timeout shared by `POST /v1/payments` and `GET /v1/payments`. The timeout
+is applied independently to each call. No separate connect or socket timeout,
+per-request override, retry plugin, second client, or second engine is introduced.
+
+The Service client owns a typed timeout failure that remains separate from generic
+transport failure and from coroutine or lifecycle cancellation. Cancellation
+continues to propagate. A POST timeout is remote-outcome uncertainty and joins the
+existing PNX-024 lookup-eligible failures; it never causes a second POST. A lookup
+timeout remains unresolved and uses the existing IPC V3
+`PAYMENT_OUTCOME_UNAVAILABLE` technical terminal without another lookup, polling,
+or backoff. HTTP 409 and malformed 409 responses remain non-eligible.
+
+The single worker performs the POST and optional lookup sequentially. A POST
+timeout followed by one lookup may consume approximately 10 seconds of sequential
+HTTP request-time budget, excluding queue wait, scheduling, cancellation timing,
+and timeout overhead; this is not a global transaction SLA. Worker count, queue
+capacity one, `AbortPolicy`, callback ownership, and shutdown behavior remain
+unchanged. Merchant, IPC V3, Payment Server production code and schema, Android
+network configuration, and Gradle dependencies are unchanged. Runtime/manual
+end-to-end verification remains deferred.
+
 ## Dependency Direction
 
 The intended dependency direction is:

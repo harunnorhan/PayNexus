@@ -235,6 +235,7 @@ private suspend fun <T> HttpRequestResult.fold(
 
 private fun HttpClientConfig<*>.configurePaymentServerClient(requestTimeoutMillis: Long) {
     expectSuccess = false
+    followRedirects = false
     val configuredRequestTimeoutMillis = requestTimeoutMillis
     install(HttpTimeout) {
         this.requestTimeoutMillis = configuredRequestTimeoutMillis

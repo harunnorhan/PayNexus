@@ -11,6 +11,7 @@ import com.paynexus.payment.domain.PaymentOutcome
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -20,17 +21,49 @@ import io.ktor.http.Url
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class KtorPaymentServerClientTest {
+    @Test
+    fun `default client policy applies five second request timeout to post and lookup`() {
+        val observedTimeouts = mutableListOf<Pair<HttpMethod, Long?>>()
+        val engine =
+            MockEngine { request ->
+                observedTimeouts +=
+                    request.method to
+                    request.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis
+                jsonResponse(response(outcome = "APPROVED"))
+            }
+        val client = KtorPaymentServerClient.create(BASE_URL, engine)
+
+        try {
+            runBlocking {
+                client.submit(request(300L))
+                client.lookup(PaymentId(PAYMENT_ID), IdempotencyKey(IDEMPOTENCY_KEY))
+            }
+        } finally {
+            client.close()
+        }
+
+        assertEquals(
+            listOf<Pair<HttpMethod, Long?>>(
+                HttpMethod.Post to 5_000L,
+                HttpMethod.Get to 5_000L,
+            ),
+            observedTimeouts,
+        )
+    }
+
     @Test
     fun `three synthetic amounts map to exact business outcomes`() {
         val cases =
@@ -226,6 +259,22 @@ class KtorPaymentServerClientTest {
     }
 
     @Test
+    fun `post request timeout is typed and does not retry`() {
+        val handlerEntries = AtomicInteger()
+        val engine =
+            MockEngine {
+                handlerEntries.incrementAndGet()
+                awaitCancellation()
+            }
+
+        assertEquals(
+            PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.Timeout),
+            submit(engine = engine, requestTimeoutMillis = TEST_REQUEST_TIMEOUT_MILLIS),
+        )
+        assertEquals(1, handlerEntries.get())
+    }
+
+    @Test
     fun `cancellation propagates instead of becoming a transport failure`() {
         val engine = MockEngine { throw CancellationException("synthetic cancellation") }
 
@@ -340,6 +389,22 @@ class KtorPaymentServerClientTest {
     }
 
     @Test
+    fun `lookup request timeout is typed and does not retry`() {
+        val handlerEntries = AtomicInteger()
+        val engine =
+            MockEngine {
+                handlerEntries.incrementAndGet()
+                awaitCancellation()
+            }
+
+        assertEquals(
+            PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.Timeout),
+            lookup(engine = engine, requestTimeoutMillis = TEST_REQUEST_TIMEOUT_MILLIS),
+        )
+        assertEquals(1, handlerEntries.get())
+    }
+
+    @Test
     fun `lookup cancellation propagates`() {
         val engine = MockEngine { throw CancellationException("synthetic lookup cancellation") }
 
@@ -353,8 +418,9 @@ class KtorPaymentServerClientTest {
         responseStatus: HttpStatusCode = HttpStatusCode.OK,
         responseBody: String = response(outcome = "APPROVED"),
         engine: MockEngine = MockEngine { jsonResponse(responseBody, responseStatus) },
+        requestTimeoutMillis: Long = DEFAULT_REQUEST_TIMEOUT_MILLIS,
     ): PaymentServerCallResult {
-        val client = KtorPaymentServerClient.create(BASE_URL, engine)
+        val client = KtorPaymentServerClient.create(BASE_URL, engine, requestTimeoutMillis)
         return try {
             runBlocking {
                 client.submit(request(amountMinorUnits))
@@ -368,8 +434,9 @@ class KtorPaymentServerClientTest {
         responseStatus: HttpStatusCode = HttpStatusCode.OK,
         responseBody: String = response(outcome = "APPROVED"),
         engine: MockEngine = MockEngine { jsonResponse(responseBody, responseStatus) },
+        requestTimeoutMillis: Long = DEFAULT_REQUEST_TIMEOUT_MILLIS,
     ): PaymentServerLookupResult {
-        val client = KtorPaymentServerClient.create(BASE_URL, engine)
+        val client = KtorPaymentServerClient.create(BASE_URL, engine, requestTimeoutMillis)
         return try {
             runBlocking {
                 client.lookup(PaymentId(PAYMENT_ID), IdempotencyKey(IDEMPOTENCY_KEY))
@@ -417,5 +484,7 @@ class KtorPaymentServerClientTest {
         const val PAYMENT_ID = " Mixed-Case Payment-ID "
         const val IDEMPOTENCY_KEY = " Mixed-Case Idempotency-Key "
         const val PAYNEXUS_HEADER = "PayNexus-Idempotency-Key"
+        const val DEFAULT_REQUEST_TIMEOUT_MILLIS = 5_000L
+        const val TEST_REQUEST_TIMEOUT_MILLIS = 50L
     }
 }

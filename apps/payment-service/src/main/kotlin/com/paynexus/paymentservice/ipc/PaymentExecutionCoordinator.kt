@@ -209,7 +209,9 @@ internal class PaymentExecutionCoordinator(
 
 internal fun PaymentServerClientFailure.isLookupEligible(): Boolean =
     when (this) {
-        PaymentServerClientFailure.Transport -> true
+        PaymentServerClientFailure.Timeout,
+        PaymentServerClientFailure.Transport,
+        -> true
 
         is PaymentServerClientFailure.UnexpectedHttpStatus -> statusCode in HTTP_SERVER_ERROR_MIN..HTTP_SERVER_ERROR_MAX
 

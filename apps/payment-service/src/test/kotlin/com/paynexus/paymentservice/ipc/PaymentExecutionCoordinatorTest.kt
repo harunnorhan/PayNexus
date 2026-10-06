@@ -110,6 +110,7 @@ class PaymentExecutionCoordinatorTest {
     fun `every client failure becomes one generic technical terminal`() {
         val failures =
             listOf(
+                PaymentServerClientFailure.Timeout,
                 PaymentServerClientFailure.InvalidRequest,
                 PaymentServerClientFailure.UnexpectedHttpStatus(500),
                 PaymentServerClientFailure.MalformedResponse(200),
@@ -137,6 +138,7 @@ class PaymentExecutionCoordinatorTest {
     fun `lookup eligibility policy is exhaustive and status aware`() {
         val eligible =
             listOf(
+                PaymentServerClientFailure.Timeout,
                 PaymentServerClientFailure.Transport,
                 PaymentServerClientFailure.UnexpectedHttpStatus(500),
                 PaymentServerClientFailure.UnexpectedHttpStatus(599),
@@ -191,6 +193,7 @@ class PaymentExecutionCoordinatorTest {
     fun `each eligible submit failure performs one lookup and can restore result`() {
         val failures =
             listOf(
+                PaymentServerClientFailure.Timeout,
                 PaymentServerClientFailure.Transport,
                 PaymentServerClientFailure.UnexpectedHttpStatus(500),
                 PaymentServerClientFailure.MalformedResponse(200),
@@ -227,6 +230,40 @@ class PaymentExecutionCoordinatorTest {
                         .single()
                         .second.value,
                 )
+            } finally {
+                coordinator.shutdown()
+            }
+        }
+    }
+
+    @Test
+    fun `post timeout performs one lookup and resolves or remains technical`() {
+        val cases =
+            listOf(
+                PaymentServerLookupResult.Found(PaymentOutcome.Approved) to
+                    PaymentExecutionTerminal.Result(PaymentResultParcel(PAYMENT_ID, IDEMPOTENCY_KEY, 1, 0)),
+                PaymentServerLookupResult.NotFound to PaymentExecutionTerminal.TechnicalFailure,
+                PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.Timeout) to
+                    PaymentExecutionTerminal.TechnicalFailure,
+                PaymentServerLookupResult.Unsuccessful(PaymentServerClientFailure.Transport) to
+                    PaymentExecutionTerminal.TechnicalFailure,
+            )
+
+        cases.forEach { (lookupResult, expectedTerminal) ->
+            val client =
+                RecordingClient(
+                    result = { PaymentServerCallResult.Unsuccessful(PaymentServerClientFailure.Timeout) },
+                    lookupResult = { _, _ -> lookupResult },
+                )
+            val coordinator = PaymentExecutionCoordinator(client)
+            try {
+                val callback = RecordingCallback()
+                coordinator.submit(request(), callback.callback)
+                callback.await()
+
+                assertEquals(expectedTerminal, callback.singleTerminal())
+                assertEquals(1, client.requests.size, lookupResult.toString())
+                assertEquals(1, client.lookups.size, lookupResult.toString())
             } finally {
                 coordinator.shutdown()
             }

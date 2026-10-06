@@ -305,6 +305,26 @@ V3, Merchant production code, Payment Server production code and schema, and
 Android network configuration. Runtime/manual end-to-end verification remains
 deferred.
 
+### Payment Service Redirect Hardening (PNX-026)
+
+The shared Payment Service Ktor client explicitly disables automatic redirects
+for both `POST /v1/payments` and the optional `GET /v1/payments` durable lookup.
+HTTP 301, 302, 303, 307, and 308 responses are returned directly to the existing
+client classification as `UnexpectedHttpStatus`; the response `Location` is
+ignored and cannot select another request destination.
+
+One application-level submit therefore cannot create a hidden second POST through
+client redirect behavior, including method/body-preserving 307 or 308 responses.
+One lookup cannot create a hidden second GET. Submit 3xx failures remain ineligible
+for durable lookup and use the existing IPC V3 outcome-unavailable technical
+terminal. The 5,000 ms request timeout, cancellation behavior, zero POST retry or
+replay, at-most-one lookup, one-worker/one-item queue, and callback ownership are
+unchanged.
+
+Merchant, IPC V3, Payment Server production code and schema, Android networking
+configuration, and dependencies are unchanged. Runtime/device/manual end-to-end
+verification remains deferred.
+
 ### Design System Foundation
 
 `design-system` provides the provisional Compose theme, compact spacing tokens,

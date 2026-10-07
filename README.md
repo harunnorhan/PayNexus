@@ -13,7 +13,7 @@ The required runtime communication path is:
 
 `Merchant Application -> Payment Service -> Payment Server`
 
-> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, strict V3 asynchronous payment IPC contract, versioned Ktor Payment Server payment API, bounded Payment Service-to-Server orchestration, and selected ambiguous-outcome resolution are implemented; Android runtime and end-to-end verification remain pending.
+> Project status: foundational architecture, Gradle monorepo, agent governance, and code quality tooling are established. The pure Kotlin payment domain, Merchant cashier flow, strict V3 asynchronous payment IPC contract, versioned Ktor Payment Server payment API, bounded Payment Service-to-Server orchestration, and selected ambiguous-outcome resolution are implemented. PNX-027 manually verified the core local Android end-to-end path and selected failure behavior; specialized ambiguous-response, real-timeout, and redirect cases retain automated evidence only.
 
 ## Documentation
 
@@ -324,6 +324,41 @@ unchanged.
 Merchant, IPC V3, Payment Server production code and schema, Android networking
 configuration, and dependencies are unchanged. Runtime/device/manual end-to-end
 verification remains deferred.
+
+### Final Local Runtime Verification (PNX-027)
+
+On 2026-10-07, the core local runtime path was manually verified with separate
+debug Merchant and Payment Service APKs on an API 37 arm64 emulator, a Payment
+Server bound to host loopback, and a dedicated temporary SQLite database outside
+the repository:
+
+```text
+Merchant UI
+-> signature-permission-protected Binder/AIDL V3
+-> Payment Service
+-> Ktor Android HTTP client
+-> emulator-to-host networking
+-> Payment Server
+-> SQLite persistence
+-> Binder callback
+-> Merchant UI
+```
+
+Synthetic TRY 3.00, 3.01, and 3.02 payments reached approved,
+declined/unspecified, and failed/processing-error terminals respectively. Runtime
+checks also covered unavailable Payment Service, unavailable Payment Server, and
+lifecycle abandonment without fabricated business outcomes or automatic replay.
+Separate real-server API checks verified SQLite persistence across server
+reconstruction, same-intent replay, idempotency conflict, and unknown lookup.
+
+This is narrow local verification of the deterministic simulation, not evidence
+of production readiness, PCI compliance, bank/acquirer authorization, distributed
+durability, exactly-once external execution, guaranteed remote cancellation, or a
+production SLA. Ambiguous POST lookup recovery, the real 5-second timeout path,
+and redirect refusal were not exercised manually at runtime and remain supported
+by deterministic automated coverage. See the
+[PNX-027 verification record](docs/engineering/testing-strategy.md#final-local-runtime-and-end-to-end-verification-pnx-027)
+for the environment, baseline, scenario matrix, exact observations, and limits.
 
 ### Design System Foundation
 

@@ -36,10 +36,12 @@ outcome-resolution coverage for the existing Payment Service client and worker.
 PNX-026 adds deterministic MockEngine redirect refusal and request-count coverage
 for Payment Service submit and lookup operations, plus explicit coordinator
 evidence that a redirect status cannot start durable lookup.
-Automated IPC integration, live Android
-Service-to-Server transport, and end-to-end test infrastructure remain future
-work. PNX-011 through PNX-025 sections below preserve historical procedures and
-evidence; they do not establish PNX-026 verification.
+PNX-027 adds the first manual verification record for the core local Android
+Service-to-Server and end-to-end runtime path, selected failure behavior, and the
+real server/SQLite API boundary. Automated IPC integration and end-to-end test
+infrastructure remain future work. PNX-011 through PNX-026 sections below preserve
+historical procedures and evidence; their milestone-specific deferrals do not
+contradict the later PNX-027 runtime record.
 
 ## Philosophy and Naming
 
@@ -114,13 +116,14 @@ canonical currency, all synthetic outcomes, and deterministic invalid-request
 responses. Database integration tests belong with the owning persistence
 implementation. Do not make ordinary unit tests depend on real network access.
 
-### End-to-End — Future
+### End-to-End
 
-Exercise the simulated `Merchant Application -> Payment Service -> Payment Server`
-path once implemented, including selected failure scenarios. Preserve the
-Payment Service boundary. Any future integration environment must be isolated,
-explicitly configured, and use synthetic data; emulator CI and end-to-end tests
-are not part of the current foundation.
+PNX-027 manually exercised the simulated
+`Merchant Application -> Payment Service -> Payment Server` path and selected
+failure scenarios while preserving the Payment Service boundary. The environment
+was isolated, explicitly configured, and used synthetic data. Automated emulator
+CI and end-to-end test infrastructure are not part of the current foundation;
+specialized runtime cases not exercised by PNX-027 remain identified separately.
 
 ## Fixture Ownership and Extraction
 
@@ -895,6 +898,153 @@ Runtime, device, emulator, adb, manual-network, and end-to-end verification were
 not performed and remain **DEFERRED**. Remote CI was **NOT RUN**. No staging,
 commit, push, Pull Request, merge, or GitHub settings change was performed.
 
+## Final Local Runtime and End-to-End Verification (PNX-027)
+
+PNX-027 closes the current project-level blanket deferral for the core local
+runtime path. Historical PNX-011 through PNX-026 records retain the evidence and
+limitations that were accurate at those milestones. This record distinguishes
+Android runtime evidence, direct Payment Server plus SQLite API evidence, and
+automated-only special-failure evidence.
+
+### Environment and Automated Baseline
+
+Verification was performed on 2026-10-07 on macOS running on Apple Silicon
+(`arm64`), with JDK 17.0.17 and Gradle 9.6.0. The disposable Android emulator used
+API 37 with the `arm64-v8a` ABI. Merchant and Payment Service used debug variants,
+IPC compatibility was V3, the Payment Server bound to `127.0.0.1:8080`, and the
+Android debug endpoint was `http://10.0.2.2:8080`. A dedicated temporary SQLite
+verification database outside the repository was reused across server
+reconstruction. No username, device serial, process identifier, private workspace
+path, or screenshot path is part of this record.
+
+The fresh Phase 1 baseline produced:
+
+| Suite | Tests | Failures | Errors | Skips |
+| --- | ---: | ---: | ---: | ---: |
+| Payment Service | 60 | 0 | 0 | 0 |
+| Merchant | 119 | 0 | 0 | 0 |
+| Server application | 32 | 0 | 0 | 0 |
+| Server domain | 6 | 0 | 0 | 0 |
+| Server infrastructure | 9 | 0 | 0 | 0 |
+| Payment contract | 14 | 0 | 0 | 0 |
+| Payment domain | 26 | 0 | 0 | 0 |
+| **Total** | **266** | **0** | **0** | **0** |
+
+Repository `qualityCheck` and `build` both passed. Their separate Gradle evidence
+was 190 and 433 actionable tasks respectively; those task counts are not test
+counts.
+
+### Runtime Verification Matrix
+
+| Behavior | Runtime Result | Verification Boundary |
+| --- | --- | --- |
+| Approved payment | PASS | Android E2E |
+| Declined payment | PASS | Android E2E |
+| Failed business outcome | PASS | Android E2E |
+| Real Binder IPC V3 | PASS | Android runtime |
+| Real emulator-to-host HTTP | PASS | Android runtime |
+| Payment Service unavailable | PASS | Android runtime |
+| Payment Server unavailable | PASS | Android runtime |
+| Lifecycle abandonment | PASS | Android runtime |
+| Persistence across restart | PASS | Server + SQLite API |
+| Same-intent replay | PASS | Server + SQLite API |
+| Idempotency conflict | PASS | Server + SQLite API |
+| Unknown lookup | PASS | Server + SQLite API |
+| Ambiguous POST lookup recovery | NOT EXERCISED | Automated evidence only |
+| Real 5-second HTTP timeout | NOT EXERCISED | Automated evidence only |
+| Redirect refusal runtime | NOT EXERCISED | Automated evidence only |
+
+`PASS` above means the behavior was observed at the stated runtime boundary.
+`NOT EXERCISED` is not promoted to runtime success by automated coverage.
+
+### Android Runtime Evidence
+
+The Merchant and Payment Service were installed as separate APKs. The exercised
+path used the explicit signature-permission-protected Binder binding, negotiated
+IPC V3 compatibility, submitted asynchronously, used Payment Service-owned HTTP
+over the real emulator-to-host connection, reached the Payment Server and SQLite,
+and returned a Binder callback that updated the Merchant UI. This verifies the
+observed end-to-end architecture, not packet-level Binder or HTTP tracing or an
+exact network-request count inferred from UI behavior.
+
+The deterministic synthetic outcomes were:
+
+| Merchant input | Minor units | Result | Observed terminal | Reason |
+| --- | ---: | --- | --- | --- |
+| `3.00` | 300 | PASS | `Payment approved` | — |
+| `3.01` | 301 | PASS | `Payment declined` | unspecified synthetic decline |
+| `3.02` | 302 | PASS | `Payment failed` | processing error |
+
+These outcomes demonstrate the local simulation only; they are not real bank or
+acquirer authorization.
+
+With Payment Service unavailable, Merchant still launched and displayed exactly
+`Payment Service is not ready. Check the Service and try again.` The payment was
+not admitted, no business outcome or direct Payment Server fallback was created,
+and the verification database did not change. After Service restoration and a
+Merchant restart, Binder connectivity recovered. Package manipulation was only a
+verification mechanism, not production behavior.
+
+With Payment Server unavailable, Merchant reached the technical terminal
+`Payment result unavailable` with the exact detail `The Payment Service could not
+provide a confirmed payment outcome. The outcome is unknown and the payment was
+not retried.` This exercised server-unavailable transport behavior, not the
+5-second timeout path. It fabricated no business decline, left the database
+unchanged, and did not automatically replay the uncertain payment after server
+recovery.
+
+Lifecycle abandonment passed with the sequence `Start payment -> Processing
+visible -> Merchant leaves foreground -> return to Merchant`. Merchant displayed
+`Payment result unavailable` with the exact detail `Local result waiting stopped
+when the screen left the foreground. The payment outcome is unknown and was not
+retried.` Local callback ownership was abandoned; remote cancellation is not
+claimed. No automatic replay was observed, and after **New payment** a stale
+callback did not overwrite the fresh state.
+
+### Payment Server and SQLite API Evidence
+
+These checks used the real Payment Server and real SQLite at the API boundary;
+they are separate from Android UI evidence. Same-intent replay returned HTTP 200
+and the same authoritative response. Reusing an idempotency key for another
+accepted intent returned HTTP 409 with the exact body
+`{"error":"IDEMPOTENCY_CONFLICT"}`, while the original authoritative record
+remained unchanged. An unknown exact lookup returned HTTP 404 with the exact body
+`{"error":"PAYMENT_NOT_FOUND"}`.
+
+Persistence across restart passed by creating a synthetic `FAILED` /
+`PROCESSING_ERROR` payment, stopping the server while retaining the database,
+reconstructing the server against that same database, and retrieving the exact
+authoritative result through durable GET lookup. Same-intent replay also remained
+stable after reconstruction. This verifies local SQLite-backed durable idempotency
+for the synthetic PayNexus server. It does not establish distributed idempotency,
+production database durability, or exactly-once external financial execution.
+
+### Automated-Only Special Failure Evidence
+
+- **PNX-024 — ambiguous POST durable lookup recovery:** runtime **NOT
+  EXERCISED**; automated coverage **PASS**. No deterministic production-like
+  mechanism was available to create a committed payment with a lost usable
+  response without flaky or out-of-scope failure injection. Deterministic tests
+  retain the policy of at most one POST and zero or one lookup.
+- **PNX-025 — real 5-second request timeout:** runtime **NOT EXERCISED**;
+  automated coverage **PASS**. Server-unavailable verification produced a
+  transport failure, not a proven `HttpRequestTimeoutException`; no firewall
+  blackhole or delay endpoint was introduced. Production request timeout remains
+  5,000 ms.
+- **PNX-026 — redirect refusal:** runtime **NOT EXERCISED**; automated coverage
+  **PASS**. The production Payment Server has no redirect behavior. MockEngine
+  covers HTTP 301, 302, 303, 307, and 308 with automatic redirects disabled.
+
+### Current Verification Limits
+
+PayNexus remains a deterministic synthetic payment simulation with no real bank
+or acquirer integration. Persistence is local, single-process SQLite; there is no
+distributed-idempotency guarantee, exactly-once external-execution guarantee,
+authentication or authorization, remote-cancellation guarantee, or production
+SLA. The real 5-second timeout path was not manually exercised, ambiguous outcome
+lookup was not manually injected, and redirect refusal was not manually exercised
+against a real redirecting server.
+
 ## IPC Contract Foundation Verification
 
 PNX-011 adds four local JVM test methods in `:payment:contract`, using the existing
@@ -1164,7 +1314,7 @@ never infer runtime binding from package installation or source inspection.
 
 ### PNX-013 Local Verification Record
 
-Observed on 2026-09-27 using JDK 17 and Medium_Phone (`emulator-5554`, API 37,
+Observed on 2026-09-27 using JDK 17 and a Medium_Phone emulator (API 37,
 `sdk_gphone16k_arm64`), started with `-read-only -no-snapshot-save`:
 
 - Fresh Merchant `testDebugUnitTest`: 67 methods, zero failures/errors/skips;
@@ -1321,8 +1471,8 @@ payment timeout/retry semantics, and Service-to-Server networking remain future 
 
 ### PNX-014 Local Verification Record
 
-Observed on 2026-09-27 with OpenJDK 17.0.17 and Medium_Phone (`emulator-5554`,
-API 37), launched for this task with `-read-only -no-snapshot-save`:
+Observed on 2026-09-27 with OpenJDK 17.0.17 and a Medium_Phone emulator (API 37),
+launched for this task with `-read-only -no-snapshot-save`:
 
 - Fresh Merchant `testDebugUnitTest`: 87 methods (20 connection policy, 48 parser,
   14 ViewModel, 5 formatter), zero failures/errors/skips. The final focused
@@ -1353,12 +1503,12 @@ API 37), launched for this task with `-read-only -no-snapshot-save`:
   fresh attempt/session identities. Service dumps showed no binding after stop.
   Rotation observed old-client `close()` and a new client reaching `Ready`.
 - Ordinary process death was induced with `run-as ... kill -9` for the verified
-  Service PID 4373. `ps -p 4373` confirmed it disappeared. The debugger observed
+  Service process. Process inspection confirmed it disappeared. The debugger observed
   the recipient on a Binder thread and main-thread cleanup/recovery. One new
   attempt reached `Ready` in the same session with its recovery allowance used;
-  the new Service PID was 4598. Killing 4598 and confirming its disappearance
-  left `Unavailable(ConnectionLost)`, no active attempt/proxy, no pending recovery,
-  and no third bind. Subsequent lifecycle restart restored connectivity.
+  killing the new verified Service process and confirming its disappearance left
+  `Unavailable(ConnectionLost)`, no active attempt/proxy, no pending recovery, and
+  no third bind. Subsequent lifecycle restart restored connectivity.
 - Stop during recovery was attempted with debugger-assisted Home navigation.
   The first probe synchronously waited for input while suspending main and caused
   an input-dispatch ANR; Android killed the debugged Merchant. This was not a

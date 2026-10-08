@@ -1817,3 +1817,48 @@ pending for Harun + ChatGPT:
 Record device/API, app versions, scenario ordering, and unavailable cases. Synthetic
 outcomes are not bank/acquirer authorization. Service-to-Server integration,
 persistence, remote CI, and production security remain separate future work.
+
+## Merchant UI Redesign Verification (PNX-028)
+
+PNX-028 changes the Merchant presentation while preserving the existing amount
+parser, formatter, payment state machine, IPC policy, and payment submission
+boundary. The supplemental keypad is tested as canonical-string mutation only:
+digits and `00` append exactly, backspace removes one final character, empty
+backspace is safe, and input is never normalized by keypad code. Decimal entry
+continues through the editable field and software or hardware keyboard.
+
+Focused ViewModel coverage verifies that Change Amount transitions only from
+Confirmation to Editing, preserves the current input, parsed candidate, and
+validation, and creates neither a submission nor payment identifiers. Calls from
+other states remain no-ops. Existing tests continue to cover parser and formatter
+boundaries, payment-flow admission and terminal outcomes, connection/request
+policy, transport mapping, and unchanged payment-domain and server behavior.
+
+The production UI and preview matrix cover empty, valid, invalid, confirmation,
+Service-not-ready confirmation, processing, approved, declined, failed, and
+transport-unavailable states. Preview configurations also represent light and
+dark themes, compact and wide widths, large font, and reduced-height landscape.
+Previews are development evidence only and do not replace runtime accessibility,
+layout, or visual verification.
+
+### PNX-028 Local Verification Record
+
+On 2026-10-07, Codex ran the approved non-device verification scope on
+`feature/PNX-028-merchant-ui-redesign`:
+
+- Merchant JVM tests passed: 126 tests, zero failures, errors, or skips, including
+  five keypad tests and two focused Change Amount regression tests;
+- Payment Service (60), payment contract (14), payment domain (26), and server
+  application (32) tests passed with zero failures, errors, or skips;
+- the design-system test task completed with no test sources, and its debug/release
+  assembly and lint tasks passed;
+- Merchant debug/release assembly and lint tasks passed; and
+- repository formatting, static analysis, quality, build, and diff-whitespace
+  checks passed on the completed implementation.
+
+No new test framework or production dependency was added. No AIDL, IPC, payment
+domain, Payment Service, server, timeout, retry/replay, idempotency, redirect, or
+network-security behavior changed. Runtime/manual visual verification was not
+performed and remains deferred for human review; local automated results do not
+claim pixel-perfect rendering, TalkBack behavior, device responsiveness, or
+production/PCI readiness.

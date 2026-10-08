@@ -362,10 +362,35 @@ for the environment, baseline, scenario matrix, exact observations, and limits.
 
 ### Design System Foundation
 
-`design-system` provides the provisional Compose theme, compact spacing tokens,
-and `PayNexusButton`, with debug-only previews. It is independent of payment
-models and is consumed by Merchant amount entry. See the
+`design-system` provides the PayNexus purple/neutral light and dark Compose
+themes, compact spacing and shape tokens, typography hierarchy, and primary and
+secondary `PayNexusButton` treatments, with debug-only previews. It is independent
+of payment models and is consumed by the Merchant payment flow. See the
 [Design System guide](docs/design/design-system.md) for APIs and verification.
+
+### Merchant UI Redesign (PNX-028)
+
+Merchant presents the existing state-driven payment flow through a responsive
+purple fintech visual system based on the PNX-028 reference. Amount entry retains
+the editable field and adds a supplemental in-app keypad with digits, double zero,
+and backspace. Every keypad action edits the same canonical input string and still
+passes through the existing strict TRY parser; dot and comma decimal entry remain
+available through software or hardware keyboard input.
+
+Confirmation has explicit back and **Change Amount** actions that return to
+Editing while preserving the current input and candidate. Neither action submits
+a payment or creates identifiers. Processing uses indeterminate progress without
+percentage, countdown, cancel, or retry behavior. Approved, Declined, Failed, and
+technical TransportFailure states share a coherent structure while preserving
+their distinct meanings and exact uncertainty copy.
+
+All illustrations are project-owned Compose drawings. No screenshot, remote
+image, image-loading library, navigation framework, or new dependency is used.
+System-driven dark mode, safe drawing insets, scrolling, scalable text, semantic
+headings, error announcements, live regions, and minimum touch targets remain part
+of the UI contract. The runtime path remains Merchant -> Payment Service ->
+Payment Server, with no IPC, HTTP, timeout, retry, redirect, idempotency, or server
+behavior change.
 
 ### Payment Domain Foundation
 

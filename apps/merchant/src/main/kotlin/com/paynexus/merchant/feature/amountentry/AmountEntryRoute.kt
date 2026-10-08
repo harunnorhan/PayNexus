@@ -15,6 +15,7 @@ internal fun AmountEntryRoute(
         state = viewModel.uiState,
         onAmountChanged = viewModel::onAmountChanged,
         onConfirm = viewModel::onConfirm,
+        onChangeAmount = viewModel::onChangeAmount,
         onStartPayment = { viewModel.onStartPayment(submitPayment) },
         onNewPayment = viewModel::onNewPayment,
     )

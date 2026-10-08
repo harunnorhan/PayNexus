@@ -35,6 +35,11 @@ private fun ThemeSample() {
             Text(text = "Design system example", style = MaterialTheme.typography.titleLarge)
             Text(text = "Synthetic content with platform typography.", style = MaterialTheme.typography.bodyLarge)
             PayNexusButton(text = "Continue", onClick = {})
+            PayNexusButton(
+                text = "Change Amount",
+                onClick = {},
+                secondary = true,
+            )
             PayNexusButton(text = "Unavailable", onClick = {}, enabled = false)
         }
     }

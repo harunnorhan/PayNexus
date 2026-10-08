@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -16,17 +17,32 @@ fun PayNexusButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    secondary: Boolean = false,
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-        enabled = enabled,
-        shape = MaterialTheme.shapes.medium,
-        contentPadding = PaddingValues(
-            horizontal = PayNexusSpacing.md,
-            vertical = PayNexusSpacing.sm,
-        ),
-    ) {
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
+    val buttonModifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 56.dp)
+    val contentPadding = PaddingValues(
+        horizontal = PayNexusSpacing.md,
+        vertical = PayNexusSpacing.sm,
+    )
+    if (secondary) {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = buttonModifier,
+            enabled = enabled,
+            shape = MaterialTheme.shapes.medium,
+            contentPadding = contentPadding,
+        ) {
+            Text(text = text, style = MaterialTheme.typography.labelLarge)
+        }
+    } else {
+        Button(
+            onClick = onClick,
+            modifier = buttonModifier,
+            enabled = enabled,
+            shape = MaterialTheme.shapes.medium,
+            contentPadding = contentPadding,
+        ) {
+            Text(text = text, style = MaterialTheme.typography.labelLarge)
+        }
     }
 }

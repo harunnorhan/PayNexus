@@ -54,20 +54,24 @@ There is no business state in the theme API.
 
 ## Colors and typography
 
-Branding is provisional. Internal light and dark color schemes use Material 3
-default palettes and semantic roles. Dynamic color is not implemented. There is
-no public color wrapper and no approved/declined/processing color vocabulary.
-Business status must not be communicated through color alone.
+Internal light and dark color schemes use a PayNexus purple/neutral palette mapped
+onto Material 3 semantic roles. Primary and secondary containers support actions
+and technical-information surfaces; the tertiary and error families support
+generic positive and error emphasis. Dynamic color is not implemented. There is
+no public payment-status color vocabulary. Merchant maps payment meaning to theme
+roles and always pairs color with a distinct symbol, title, and supporting text.
 
-Typography uses default/platform fonts. The explicit initial roles are
-`titleLarge` (22 sp / 28 sp line height), `bodyLarge` (16 / 24), and `labelLarge`
-(14 / 20); other roles retain Material defaults. Font scaling remains enabled.
-There are no bundled or downloaded custom fonts.
+Typography uses default/platform fonts. Explicit roles include `headlineSmall`
+(24 sp / 30 sp, bold), `titleLarge` (22 / 28, bold), `titleMedium` (16 / 22,
+semibold), `bodyLarge` (16 / 24), `bodyMedium` (14 / 20), and `labelLarge`
+(16 / 22, semibold). Other roles retain Material defaults. Font scaling remains
+enabled. There are no bundled or downloaded custom fonts.
 
 ## Shapes and spacing
 
-Material 3 shapes define small, medium, and large rounded corners at 8, 12,
-and 16 dp. Other roles retain Material defaults. Buttons use the medium shape.
+Material 3 shapes define small, medium, large, and extra-large rounded corners at
+12, 16, 24, and 32 dp. Buttons use the medium shape; screens choose larger roles
+for cards and decorative containers.
 
 The immutable public `PayNexusSpacing` object provides:
 
@@ -84,10 +88,12 @@ constraints, not spacing tokens. No configurable token framework exists.
 
 ## Current component
 
-Only `PayNexusButton(text, onClick, modifier, enabled)` exists. It is a stateless
-Material 3 text button wrapper with theme styling, horizontal `md` and vertical
-`sm` padding. It forwards enabled state and click handling to Material Button.
-It has no loading, debounce, icon, navigation, or payment behavior.
+`PayNexusButton(text, onClick, modifier, enabled, secondary)` is a stateless
+Material 3 button wrapper. The default uses a filled primary button; `secondary`
+uses an outlined treatment. Both use the medium shape,
+horizontal `md` and vertical `sm` padding, a 56 dp minimum visual height, and the
+same enabled/click contract. The component has no loading, debounce, icon,
+navigation, or payment behavior.
 
 It supports multiline labels, growing height, and caller-controlled width.
 It does not force full width. Future components require demonstrated reuse;
@@ -112,11 +118,12 @@ screen breakpoints. Feature layers own adaptive screen layout.
 
 ## Previews
 
-Debug-only previews cover light/dark themes, enabled and disabled buttons,
-long text at narrow width, and 2x font scale. Theme samples show representative
-text roles and buttons at narrow and wide preview widths. Labels are synthetic,
-callbacks are empty, and previews need no domain models or external services.
-Preview dimensions are demonstration scenarios, not production assumptions.
+Debug-only previews cover light/dark themes, primary and secondary treatments,
+enabled and disabled buttons, long text at narrow width, and 2x font scale. Theme
+samples show representative text roles and both button styles at narrow and wide
+preview widths. Labels are synthetic, callbacks are empty, and previews need no
+domain models or external services. Preview dimensions are demonstration scenarios,
+not production assumptions.
 
 Open the preview files in Android Studio and render all previews. Inspect
 wrapping, clipping, disabled clarity, spacing, and both palettes. Preview source

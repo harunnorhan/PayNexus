@@ -53,6 +53,12 @@ internal class AmountEntryViewModel(
         }
     }
 
+    fun onChangeAmount() {
+        if (uiState.payment is MerchantPaymentUiState.Confirmation) {
+            uiState = uiState.copy(payment = MerchantPaymentUiState.Editing)
+        }
+    }
+
     fun onStartPayment(
         submit: (PaymentId, IdempotencyKey, PaymentAmount) -> PaymentSubmissionAdmission,
     ) {

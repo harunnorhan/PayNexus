@@ -11,102 +11,111 @@ import com.paynexus.payment.domain.PaymentAmount
 import com.paynexus.payment.domain.PaymentFailure
 import com.paynexus.payment.domain.PaymentOutcome
 
-@Preview(name = "Empty", widthDp = 360, heightDp = 640)
+@Preview(name = "Empty", widthDp = 360, heightDp = 800)
+@Preview(name = "Empty dark", widthDp = 360, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "Empty compact", widthDp = 280, heightDp = 600)
 @Composable
 private fun AmountEntryEmptyPreview() {
     AmountEntryPreview(AmountEntryUiState())
 }
 
-@Preview(name = "ValidWhole", widthDp = 360, heightDp = 640)
+@Preview(name = "Valid", widthDp = 360, heightDp = 800)
+@Preview(name = "Valid wide", widthDp = 600, heightDp = 800)
 @Composable
-private fun AmountEntryValidWholePreview() {
-    AmountEntryPreview(AmountEntryUiState("12", PaymentAmount(Money(1200L, CurrencyCode.TRY)), AmountEntryValidation.Valid))
-}
-
-@Preview(name = "FractionalComma", widthDp = 360, heightDp = 640)
-@Composable
-private fun AmountEntryFractionalCommaPreview() {
-    AmountEntryPreview(AmountEntryUiState("12,34", PaymentAmount(Money(1234L, CurrencyCode.TRY)), AmountEntryValidation.Valid))
-}
-
-@Preview(name = "Incomplete", widthDp = 360, heightDp = 640)
-@Composable
-private fun AmountEntryIncompletePreview() {
-    AmountEntryPreview(AmountEntryUiState("12.", validation = AmountEntryValidation.Incomplete))
-}
-
-@Preview(name = "InvalidZero", widthDp = 360, heightDp = 640)
-@Composable
-private fun AmountEntryInvalidZeroPreview() {
-    AmountEntryPreview(AmountEntryUiState("0", validation = AmountEntryValidation.MustBePositive))
-}
-
-@Preview(name = "InvalidFormat", widthDp = 360, heightDp = 640)
-@Composable
-private fun AmountEntryInvalidFormatPreview() {
-    AmountEntryPreview(AmountEntryUiState("12abc", validation = AmountEntryValidation.InvalidFormat))
-}
-
-@Preview(name = "Overflow", widthDp = 360, heightDp = 640)
-@Composable
-private fun AmountEntryOverflowPreview() {
-    AmountEntryPreview(AmountEntryUiState("92233720368547758.08", validation = AmountEntryValidation.Overflow))
-}
-
-@Preview(name = "Confirmed", widthDp = 360, heightDp = 640)
-@Preview(name = "Dark", widthDp = 360, heightDp = 640, uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "Narrow", widthDp = 280, heightDp = 480)
-@Preview(name = "LargeFont", widthDp = 280, heightDp = 480, fontScale = 2f)
-@Preview(name = "Landscape", widthDp = 640, heightDp = 280)
-@Preview(name = "Wide", widthDp = 600, heightDp = 800)
-@Composable
-private fun AmountEntryConfirmedPreview() {
-    val amount = PaymentAmount(Money(1234L, CurrencyCode.TRY))
+private fun AmountEntryValidPreview() {
     AmountEntryPreview(
         AmountEntryUiState(
-            "12.34",
-            amount,
-            AmountEntryValidation.Valid,
-            MerchantPaymentUiState.Confirmation(amount),
+            input = "11111,23",
+            amount = previewAmount(1_111_123L),
+            validation = AmountEntryValidation.Valid,
         ),
     )
 }
 
-@Preview(name = "Processing", widthDp = 360, heightDp = 640)
+@Preview(name = "Invalid", widthDp = 360, heightDp = 800)
+@Composable
+private fun AmountEntryInvalidPreview() {
+    AmountEntryPreview(
+        AmountEntryUiState(
+            input = "zxc",
+            validation = AmountEntryValidation.InvalidFormat,
+        ),
+    )
+}
+
+@Preview(name = "Confirmation", widthDp = 360, heightDp = 800)
+@Preview(name = "Confirmation large font", widthDp = 320, heightDp = 800, fontScale = 2f)
+@Preview(name = "Confirmation landscape", widthDp = 640, heightDp = 320)
+@Composable
+private fun PaymentConfirmationPreview() {
+    val amount = previewAmount(1_234L)
+    AmountEntryPreview(
+        AmountEntryUiState(
+            input = "12,34",
+            amount = amount,
+            validation = AmountEntryValidation.Valid,
+            payment = MerchantPaymentUiState.Confirmation(amount),
+        ),
+    )
+}
+
+@Preview(name = "Confirmation Service not ready", widthDp = 360, heightDp = 800)
+@Composable
+private fun PaymentConfirmationFailurePreview() {
+    val amount = previewAmount(1_234L)
+    AmountEntryPreview(
+        AmountEntryUiState(
+            input = "12.34",
+            amount = amount,
+            validation = AmountEntryValidation.Valid,
+            payment = MerchantPaymentUiState.Confirmation(amount, PaymentStartFailure.ServiceNotReady),
+        ),
+    )
+}
+
+@Preview(name = "Processing", widthDp = 360, heightDp = 800)
+@Preview(name = "Processing dark", widthDp = 360, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun PaymentProcessingPreview() {
-    val amount = PaymentAmount(Money(300L, CurrencyCode.TRY))
+    val amount = previewAmount(300L)
     AmountEntryPreview(AmountEntryUiState(payment = MerchantPaymentUiState.Processing(amount)))
 }
 
-@Preview(name = "Approved", widthDp = 360, heightDp = 640)
+@Preview(name = "Approved", widthDp = 360, heightDp = 800)
+@Preview(name = "Approved dark", widthDp = 360, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun PaymentApprovedPreview() {
-    val amount = PaymentAmount(Money(300L, CurrencyCode.TRY))
+    val amount = previewAmount(300L)
     AmountEntryPreview(AmountEntryUiState(payment = MerchantPaymentUiState.Result(amount, PaymentOutcome.Approved)))
 }
 
-@Preview(name = "Declined", widthDp = 360, heightDp = 640)
+@Preview(name = "Declined", widthDp = 360, heightDp = 800)
 @Composable
 private fun PaymentDeclinedPreview() {
-    val amount = PaymentAmount(Money(301L, CurrencyCode.TRY))
+    val amount = previewAmount(301L)
     val outcome = PaymentOutcome.Declined(DeclineReason.UNSPECIFIED)
     AmountEntryPreview(AmountEntryUiState(payment = MerchantPaymentUiState.Result(amount, outcome)))
 }
 
-@Preview(name = "Failed", widthDp = 360, heightDp = 640)
+@Preview(name = "Failed", widthDp = 360, heightDp = 800)
 @Composable
 private fun PaymentFailedPreview() {
-    val amount = PaymentAmount(Money(302L, CurrencyCode.TRY))
+    val amount = previewAmount(302L)
     val outcome = PaymentOutcome.Failed(PaymentFailure.PROCESSING_ERROR)
     AmountEntryPreview(AmountEntryUiState(payment = MerchantPaymentUiState.Result(amount, outcome)))
 }
 
-@Preview(name = "TransportFailure", widthDp = 360, heightDp = 640)
+@Preview(name = "Transport unavailable", widthDp = 360, heightDp = 800)
+@Preview(
+    name = "Transport unavailable dark",
+    widthDp = 360,
+    heightDp = 800,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
 @Composable
 private fun PaymentTransportFailurePreview() {
-    val amount = PaymentAmount(Money(300L, CurrencyCode.TRY))
-    val state = MerchantPaymentUiState.TransportFailure(amount, MerchantTransportFailure.ConnectionLost)
+    val amount = previewAmount(300L)
+    val state = MerchantPaymentUiState.TransportFailure(amount, MerchantTransportFailure.OutcomeUnavailable)
     AmountEntryPreview(AmountEntryUiState(payment = state))
 }
 
@@ -117,8 +126,11 @@ private fun AmountEntryPreview(state: AmountEntryUiState) {
             state = state,
             onAmountChanged = {},
             onConfirm = {},
+            onChangeAmount = {},
             onStartPayment = {},
             onNewPayment = {},
         )
     }
 }
+
+private fun previewAmount(minorUnits: Long): PaymentAmount = PaymentAmount(Money(minorUnits, CurrencyCode.TRY))

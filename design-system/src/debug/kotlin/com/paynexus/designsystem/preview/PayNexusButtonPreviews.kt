@@ -30,6 +30,20 @@ private fun PayNexusButtonDisabledPreview() {
     }
 }
 
+@Preview(name = "Secondary", showBackground = true)
+@Composable
+private fun PayNexusButtonSecondaryPreview() {
+    PayNexusTheme(darkTheme = false) {
+        Surface {
+            PayNexusButton(
+                text = "Change Amount",
+                onClick = {},
+                secondary = true,
+            )
+        }
+    }
+}
+
 @Preview(name = "Long text in narrow space", widthDp = 160, showBackground = true)
 @Composable
 private fun PayNexusButtonLongTextPreview() {
@@ -42,6 +56,12 @@ private fun PayNexusButtonLongTextPreview() {
 @Composable
 private fun PayNexusButtonLargeFontPreview() {
     PayNexusTheme(darkTheme = true) {
-        Surface { PayNexusButton(text = "Continue to the next example", onClick = {}) }
+        Surface {
+            PayNexusButton(
+                text = "Continue to the next example",
+                onClick = {},
+                secondary = true,
+            )
+        }
     }
 }

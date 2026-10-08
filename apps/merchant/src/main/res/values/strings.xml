@@ -1,29 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PayNexus Merchant</string>
-    <string name="amount_entry_title">Enter amount</string>
-    <string name="amount_entry_label">Amount (TRY)</string>
+    <string name="amount_entry_title">Payment Amount</string>
+    <string name="amount_entry_subtitle">Enter the amount to charge</string>
+    <string name="amount_entry_currency">TRY</string>
+    <string name="amount_entry_placeholder">0,00</string>
     <string name="amount_entry_hint">Use a dot or comma and up to two decimal places.</string>
     <string name="amount_entry_incomplete">Enter digits after the decimal separator.</string>
     <string name="amount_entry_error_format">Enter a valid amount.</string>
     <string name="amount_entry_error_fraction">Use at most two decimal places.</string>
     <string name="amount_entry_error_positive">Enter an amount greater than zero.</string>
     <string name="amount_entry_error_overflow">Amount is too large.</string>
-    <string name="amount_entry_confirm">Confirm amount</string>
-    <string name="amount_entry_ready">Amount ready: %1$s</string>
+    <string name="amount_entry_confirm">Continue</string>
+    <string name="amount_entry_clear_description">Clear amount</string>
+    <string name="amount_keypad_double_zero_description">Double zero</string>
+    <string name="amount_keypad_backspace_description">Delete last character</string>
     <string name="amount_entry_formatted_try">TRY %1$s</string>
+    <string name="payment_confirmation_title">Confirm Payment</string>
+    <string name="payment_confirmation_amount_label">Payment Amount</string>
     <string name="payment_confirmation_demo">Ready to send to the synthetic Payment Service.</string>
-    <string name="payment_start">Start payment</string>
+    <string name="payment_start">Start Payment</string>
+    <string name="payment_change_amount">Change Amount</string>
+    <string name="payment_change_amount_back_description">Change amount</string>
     <string name="payment_start_not_ready">Payment Service is not ready. Check the Service and try again.</string>
     <string name="payment_start_already_active">Another local payment request is already active.</string>
     <string name="payment_start_invalid">The payment request could not be created. Start a new payment.</string>
-    <string name="payment_processing_title">Processing payment</string>
-    <string name="payment_processing_detail">Waiting for the synthetic Payment Service result.</string>
-    <string name="payment_approved_title">Payment approved</string>
-    <string name="payment_approved_detail">Synthetic demonstration result: approved.</string>
-    <string name="payment_declined_title">Payment declined</string>
+    <string name="payment_processing_title">Processing Payment</string>
+    <string name="payment_processing_detail">Please wait while the synthetic payment is processed.</string>
+    <string name="payment_processing_progress_description">Payment processing in progress</string>
+    <string name="payment_approved_title">Payment Successful</string>
+    <string name="payment_approved_detail">The synthetic payment was successfully completed.</string>
+    <string name="payment_declined_title">Payment Declined</string>
     <string name="payment_declined_detail">Synthetic demonstration result: declined for an unspecified reason.</string>
-    <string name="payment_failed_title">Payment failed</string>
+    <string name="payment_failed_title">Payment Failed</string>
     <string name="payment_failed_detail">Synthetic demonstration result: processing error.</string>
     <string name="payment_transport_failure_title">Payment result unavailable</string>
     <string name="payment_transport_connection_lost">The Service connection was lost. The payment outcome is unknown and was not retried.</string>
@@ -33,5 +42,5 @@
     <string name="payment_transport_outcome_unavailable">The Payment Service could not provide a confirmed payment outcome. The outcome is unknown and the payment was not retried.</string>
     <string name="payment_transport_service_unavailable">The Payment Service became unavailable. No payment outcome was created.</string>
     <string name="payment_transport_abandoned">Local result waiting stopped when the screen left the foreground. The payment outcome is unknown and was not retried.</string>
-    <string name="payment_new">New payment</string>
+    <string name="payment_new">New Payment</string>
 </resources>

@@ -133,6 +133,53 @@ class AmountEntryViewModelTest {
     }
 
     @Test
+    fun `change amount returns to editing without changing input candidate or validation`() {
+        val identifiers = PaymentIdentifiers(PaymentId("payment-change"), IdempotencyKey("idempotency-change"))
+        val factory = RecordingIdentifiersFactory(identifiers)
+        val viewModel = AmountEntryViewModel(factory)
+        viewModel.onAmountChanged("00012,34")
+        val candidate = viewModel.uiState.amount
+        viewModel.onConfirm()
+
+        viewModel.onChangeAmount()
+
+        assertEquals("00012,34", viewModel.uiState.input)
+        assertEquals(candidate, viewModel.uiState.amount)
+        assertEquals(AmountEntryValidation.Valid, viewModel.uiState.validation)
+        assertEquals(MerchantPaymentUiState.Editing, viewModel.uiState.payment)
+        assertTrue(viewModel.uiState.isConfirmEnabled)
+        assertEquals(0, factory.created)
+    }
+
+    @Test
+    fun `change amount outside confirmation is a no-op`() {
+        val identifiers = PaymentIdentifiers(PaymentId("payment-no-op"), IdempotencyKey("idempotency-no-op"))
+        val viewModel = AmountEntryViewModel(RecordingIdentifiersFactory(identifiers))
+        viewModel.onAmountChanged("invalid")
+        val invalidEditing = viewModel.uiState
+        viewModel.onChangeAmount()
+        assertEquals(invalidEditing, viewModel.uiState)
+
+        viewModel.onAmountChanged("3.00")
+        viewModel.onConfirm()
+        viewModel.onStartPayment { _, _, _ -> PaymentSubmissionAdmission.Accepted }
+        val processing = viewModel.uiState
+        viewModel.onChangeAmount()
+        assertEquals(processing, viewModel.uiState)
+
+        viewModel.onSubmissionStateChanged(
+            PaymentSubmissionState.Completed(
+                identifiers.paymentId,
+                identifiers.idempotencyKey,
+                PaymentOutcome.Approved,
+            ),
+        )
+        val result = viewModel.uiState
+        viewModel.onChangeAmount()
+        assertEquals(result, viewModel.uiState)
+    }
+
+    @Test
     fun `editing a confirmed amount to another valid value replaces the candidate`() {
         val viewModel = AmountEntryViewModel()
         viewModel.onAmountChanged("12")

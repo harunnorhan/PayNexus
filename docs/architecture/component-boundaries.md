@@ -54,7 +54,7 @@ The Merchant Application must not depend directly on:
 - service-side validation
 - transaction lifecycle management
 - network gateway integration
-- local transaction persistence
+- durable outcome resolution through Payment Server lookup
 - transport-to-domain error mapping
 - payment retry safety
 - idempotency coordination

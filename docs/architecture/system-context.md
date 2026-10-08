@@ -22,3 +22,10 @@ Headless Android Payment Service
         | HTTP
         v
 Kotlin Payment Server
+```
+
+The Merchant Application and Payment Service are independently installed Android
+APKs. Payment Service is headless and protected by a signature-level bind
+permission. Merchant never communicates with Payment Server directly; Payment
+Service owns remote payment orchestration, and Payment Server provides the
+synthetic HTTP API and local SQLite persistence.

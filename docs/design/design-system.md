@@ -116,6 +116,28 @@ Components respect parent constraints and directional padding. Production code
 contains no device dimensions, device-model checks, absolute positioning, or
 screen breakpoints. Feature layers own adaptive screen layout.
 
+## Merchant brand mark
+
+The Merchant application owns the PayNexus payment-terminal brand mark. Its fixed
+representative palette is purple `#4C26B4`, terminal white `#F6F2FB`, terminal
+green `#05542D`, keypad dark `#18181A`, and lavender `#D5C5FD`. These colors are
+local branding resources rather than additions to the generic design-system API.
+
+The launcher artwork separates a full-bleed purple background from a vector
+foreground containing the lavender offset, terminal body, display, and nine-key
+silhouette. Meaningful foreground geometry stays within the adaptive-icon safe
+region; Android applies the final circle, squircle, or other launcher mask. No
+outer mask, raster lighting, remote asset, or legacy density bitmap is embedded.
+The API 26 adaptive resource also supplies an intentional single-color terminal
+silhouette for themed launchers. A non-adaptive base resource exists only so the
+manifest reference remains linkable; supported devices select the adaptive
+resource.
+
+`PaymentTerminalVisual` reuses the same local foreground vector over the same
+Merchant-owned purple background at its existing 88 dp and 112 dp sizes. It
+remains decorative and clears semantics. Payment Service is headless and owns no
+launcher identity.
+
 ## Previews
 
 Debug-only previews cover light/dark themes, primary and secondary treatments,

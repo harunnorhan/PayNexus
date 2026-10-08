@@ -1,6 +1,6 @@
 package com.paynexus.merchant.feature.amountentry
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,10 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -44,22 +43,6 @@ import com.paynexus.payment.domain.DeclineReason
 import com.paynexus.payment.domain.PaymentAmount
 import com.paynexus.payment.domain.PaymentFailure
 import com.paynexus.payment.domain.PaymentOutcome
-
-private const val TERMINAL_WIDTH_RATIO = 0.5f
-private const val TERMINAL_HEIGHT_RATIO = 0.72f
-private const val TERMINAL_SHADOW_RATIO = 0.04f
-private const val TERMINAL_CORNER_RATIO = 0.1f
-private const val SCREEN_LEFT_RATIO = 0.17f
-private const val SCREEN_TOP_RATIO = 0.13f
-private const val SCREEN_WIDTH_RATIO = 0.66f
-private const val SCREEN_HEIGHT_RATIO = 0.25f
-private const val SCREEN_CORNER_RATIO = 0.03f
-private const val KEY_RADIUS_RATIO = 0.035f
-private const val KEY_START_X_RATIO = 0.27f
-private const val KEY_COLUMN_STEP_RATIO = 0.23f
-private const val KEY_START_Y_RATIO = 0.52f
-private const val KEY_ROW_STEP_RATIO = 0.16f
-private const val KEYPAD_GRID_SIZE = 3
 
 @Composable
 internal fun ConfirmationContent(
@@ -223,62 +206,16 @@ internal fun TransportFailureContent(
 
 @Composable
 internal fun PaymentTerminalVisual(modifier: Modifier = Modifier) {
-    val primary = MaterialTheme.colorScheme.primary
-    val container = MaterialTheme.colorScheme.primaryContainer
-    val terminal = MaterialTheme.colorScheme.onSurface
-    val screen = MaterialTheme.colorScheme.tertiaryContainer
-    val key = MaterialTheme.colorScheme.surface
     Box(
         modifier = modifier
-            .background(container, MaterialTheme.shapes.large)
-            .padding(PayNexusSpacing.sm)
+            .background(colorResource(R.color.merchant_brand_purple), MaterialTheme.shapes.large)
             .clearAndSetSemantics {},
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val terminalWidth = size.width * TERMINAL_WIDTH_RATIO
-            val terminalHeight = size.height * TERMINAL_HEIGHT_RATIO
-            val left = (size.width - terminalWidth) / 2f
-            val top = (size.height - terminalHeight) / 2f
-            drawRoundRect(
-                color = primary,
-                topLeft = Offset(
-                    left - size.width * TERMINAL_SHADOW_RATIO,
-                    top + size.height * TERMINAL_SHADOW_RATIO,
-                ),
-                size = Size(terminalWidth, terminalHeight),
-                cornerRadius = CornerRadius(size.width * TERMINAL_CORNER_RATIO),
-            )
-            drawRoundRect(
-                color = terminal,
-                topLeft = Offset(left, top),
-                size = Size(terminalWidth, terminalHeight),
-                cornerRadius = CornerRadius(size.width * TERMINAL_CORNER_RATIO),
-            )
-            drawRoundRect(
-                color = screen,
-                topLeft = Offset(
-                    left + terminalWidth * SCREEN_LEFT_RATIO,
-                    top + terminalHeight * SCREEN_TOP_RATIO,
-                ),
-                size = Size(
-                    terminalWidth * SCREEN_WIDTH_RATIO,
-                    terminalHeight * SCREEN_HEIGHT_RATIO,
-                ),
-                cornerRadius = CornerRadius(size.width * SCREEN_CORNER_RATIO),
-            )
-            repeat(KEYPAD_GRID_SIZE) { row ->
-                repeat(KEYPAD_GRID_SIZE) { column ->
-                    drawCircle(
-                        color = key,
-                        radius = size.width * KEY_RADIUS_RATIO,
-                        center = Offset(
-                            left + terminalWidth * (KEY_START_X_RATIO + column * KEY_COLUMN_STEP_RATIO),
-                            top + terminalHeight * (KEY_START_Y_RATIO + row * KEY_ROW_STEP_RATIO),
-                        ),
-                    )
-                }
-            }
-        }
+        Image(
+            painter = painterResource(R.drawable.ic_launcher_foreground),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 

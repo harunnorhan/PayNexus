@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+        Android adaptive icons require mipmap-anydpi-v26. Merchant minSdk is 26,
+        and this Lint version incorrectly reports the required qualifier as obsolete.
+    -->
+    <issue id="ObsoleteSdkInt">
+        <!-- Lint reports this finding on the directory, which contains only ic_launcher.xml. -->
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+</lint>

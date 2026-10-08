@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="@color/merchant_terminal_lavender"
+        android:pathData="M39,25H65C70,25 74,29 74,34V78C74,83 70,87 65,87H39C34,87 30,83 30,78V34C30,29 34,25 39,25Z" />
+    <path
+        android:fillColor="@color/merchant_terminal_white"
+        android:pathData="M43,21H69C74,21 78,25 78,30V74C78,79 74,83 69,83H43C38,83 34,79 34,74V30C34,25 38,21 43,21Z" />
+    <path
+        android:fillColor="@color/merchant_terminal_green"
+        android:pathData="M44,29H68C69.66,29 71,30.34 71,32V42C71,43.66 69.66,45 68,45H44C42.34,45 41,43.66 41,42V32C41,30.34 42.34,29 44,29Z" />
+    <path
+        android:fillColor="@color/merchant_terminal_keypad"
+        android:pathData="M48,54A3,3 0,1 1,42 54A3,3 0,1 1,48 54ZM59,54A3,3 0,1 1,53 54A3,3 0,1 1,59 54ZM70,54A3,3 0,1 1,64 54A3,3 0,1 1,70 54ZM48,64A3,3 0,1 1,42 64A3,3 0,1 1,48 64ZM59,64A3,3 0,1 1,53 64A3,3 0,1 1,59 64ZM70,64A3,3 0,1 1,64 64A3,3 0,1 1,70 64ZM48,74A3,3 0,1 1,42 74A3,3 0,1 1,48 74ZM59,74A3,3 0,1 1,53 74A3,3 0,1 1,59 74ZM70,74A3,3 0,1 1,64 74A3,3 0,1 1,70 74Z" />
+</vector>

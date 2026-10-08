@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="merchant_brand_purple">#4C26B4</color>
+    <color name="merchant_terminal_white">#F6F2FB</color>
+    <color name="merchant_terminal_green">#05542D</color>
+    <color name="merchant_terminal_keypad">#18181A</color>
+    <color name="merchant_terminal_lavender">#D5C5FD</color>
+</resources>

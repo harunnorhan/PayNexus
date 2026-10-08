@@ -1862,3 +1862,39 @@ network-security behavior changed. Runtime/manual visual verification was not
 performed and remains deferred for human review; local automated results do not
 claim pixel-perfect rendering, TalkBack behavior, device responsiveness, or
 production/PCI readiness.
+
+## Merchant Branding Verification (PNX-029)
+
+PNX-029 changes only Merchant-owned launcher and decorative branding resources.
+It does not change payment behavior, navigation, IPC, persistence, networking, or
+money representation. The launcher uses local vector/color resources, Android-
+owned adaptive masks, and a single-color monochrome terminal silhouette; Payment
+Service remains headless.
+
+On 2026-10-08, Codex exercised the Merchant debug APK on the existing Android 17
+(API 37) emulator. The colored icon was centered, unclipped, and recognizable on
+the home screen and in the app drawer, with no stale placeholder. Direct launcher
+checks covered Circle, Square, 4-sided cookie, 7-sided cookie, and Arch masks;
+each kept the foreground readable and unclipped. The launcher's Minimal icon
+style rendered the supplied monochrome terminal with system-owned tinting. A cold
+launch displayed unclipped starting-window branding and completed normally. The
+reused in-app mark was centered and crisp in light and dark amount-entry screens,
+and the 112 dp processing-state illustration rendered without layout shift or
+clipping. Launcher activity queries
+returned only `com.paynexus.merchant/.MainActivity`; no Payment Service launcher
+activity or second icon appeared.
+
+Fresh debug and release assembly, Merchant lint, Spotless, Detekt, `qualityCheck`,
+and the repository `build` completed successfully. Android's official
+[adaptive-icon guidance](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)
+places the resource at `res/mipmap-anydpi-v26/ic_launcher.xml`. This Lint version
+reports that required qualifier as `ObsoleteSdkInt` because Merchant's minimum SDK
+is also 26, while moving the adaptive-icon XML to the unversioned directory makes
+AAPT resource linking fail.
+
+Merchant therefore owns a repository/tooling false-positive compatibility
+exception in `apps/merchant/lint.xml`. Lint reports the finding on the
+`mipmap-anydpi-v26` directory rather than the XML file, so the ignore targets that
+directory; it contains only `ic_launcher.xml`. The exception applies only to
+`ObsoleteSdkInt` at that location. No lint baseline, global rule disable, SDK
+change, warning downgrade, or broader quality-policy weakening was introduced.

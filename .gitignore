@@ -33,3 +33,4 @@ temp/
 
 # Local Payment Server data
 /data/
+/server/application/data/

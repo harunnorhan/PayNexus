@@ -1858,10 +1858,17 @@ On 2026-10-07, Codex ran the approved non-device verification scope on
 
 No new test framework or production dependency was added. No AIDL, IPC, payment
 domain, Payment Service, server, timeout, retry/replay, idempotency, redirect, or
-network-security behavior changed. Runtime/manual visual verification was not
-performed and remains deferred for human review; local automated results do not
-claim pixel-perfect rendering, TalkBack behavior, device responsiveness, or
-production/PCI readiness.
+network-security behavior changed.
+
+Two-phase Android runtime visual verification also passed. Phase A covered empty,
+valid, invalid, confirmation, approved, declined, failed, transport-unavailable,
+and New Payment reset states. Processing was not reliably captured because the
+local response completed too quickly; this remained an explicit observation
+limitation. Phase B covered dark mode, 2.0x large font, compact and landscape
+layouts, Payment Service not ready, Change Amount, confirmation back, New Payment
+reset, and basic accessibility-semantics sanity. Exhaustive TalkBack traversal was
+not performed, so this evidence does not claim full accessibility certification,
+pixel-perfect rendering across all devices, or production/PCI readiness.
 
 ## Merchant Branding Verification (PNX-029)
 
@@ -1898,3 +1905,40 @@ exception in `apps/merchant/lint.xml`. Lint reports the finding on the
 directory; it contains only `ic_launcher.xml`. The exception applies only to
 `ObsoleteSdkInt` at that location. No lint baseline, global rule disable, SDK
 change, warning downgrade, or broader quality-policy weakening was introduced.
+
+## Final Portfolio and Release Polish Verification (PNX-030)
+
+PNX-030's tracked changes affect repository presentation and documentation only.
+It replaces the
+historical root README with a concise portfolio entry point, adds the approved
+showcase poster and documentation index, fixes narrow documentation accuracy and
+Markdown issues, and ignores the existing default local server data directory.
+No product code, runtime behavior, dependency, IPC, payment, persistence, or CI
+configuration changed.
+
+On 2026-10-08, a standard-library link check validated relative links, heading
+anchors, image paths, and Markdown fence balance across the root README and
+`docs/`. The repository poster candidate was byte-identical to the approved
+source PNG and retained its 1672 x 941 dimensions.
+
+The documented Gradle run/install tasks and Merchant launcher component were
+confirmed. A fresh server instance reached the application run task but could not
+bind because an existing PayNexus server from this repository already owned
+`127.0.0.1:8080`; that process was left untouched. Its `/health` response was
+verified, both debug APKs installed on the available API 37 arm64 emulator,
+Merchant launched through `com.paynexus.merchant/.MainActivity`, and a synthetic
+TRY 3.00 payment reached `Payment Successful` through the existing runtime path.
+
+The existing server was using the known untracked repository-local
+`server/application/data/paynexus-payments.db`, so the smoke payment updated that
+artifact despite the task's preserve-local-data guardrail. The file was not
+deleted, moved, staged, or manually repaired. This was a local procedural
+deviation during smoke verification. The database remains untracked, unstaged,
+and absent from the repository diff, so the event is not a product or repository
+implementation failure and does not block PNX-030.
+
+Fresh `spotlessCheck`, `detekt`, `qualityCheck`, `build`, and
+`git diff --check` completed successfully. This documentation verification does
+not add new evidence for the automated-only ambiguous-response, real-timeout, or
+redirect runtime scenarios, and it does not replace a final review of README and
+Mermaid rendering on GitHub desktop and mobile views.

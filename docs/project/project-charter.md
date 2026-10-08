@@ -160,4 +160,5 @@ All repository documentation, source code, commit messages, Pull Requests, Issue
 
 ## Status
 
-Initial architecture definition.
+Initial portfolio scope implemented. This charter remains the governing source for
+project boundaries, safety, and engineering priorities.
